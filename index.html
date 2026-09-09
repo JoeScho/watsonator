@@ -1,0 +1,2870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>WATSONATOR</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26'%3E%F0%9F%90%95%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#f7f2e0; --shadow:#12101a; --hot:#ffd23f; --bad:#ff5964; --good:#7ee081;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none!important}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#0a0912}
+  body{
+    font-family:'Press Start 2P',ui-monospace,Menlo,Consolas,monospace;
+    color:var(--ink);
+    -webkit-font-smoothing:none;
+    touch-action:none;
+  }
+  #view{position:fixed;inset:0}
+  #view canvas{
+    display:block;width:100%;height:100%;
+    image-rendering:pixelated;
+    image-rendering:-moz-crisp-edges;
+    image-rendering:crisp-edges;
+  }
+  /* scanline + vignette crust */
+  #crust{
+    position:fixed;inset:0;pointer-events:none;z-index:5;
+    background:
+      repeating-linear-gradient(to bottom, rgba(0,0,0,.16) 0 2px, rgba(0,0,0,0) 2px 4px),
+      radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(4,2,12,.55) 100%);
+    mix-blend-mode:multiply;
+  }
+  #flash{position:fixed;inset:0;pointer-events:none;z-index:6;background:#ff2b3d;opacity:0;transition:opacity .18s}
+
+  .hud{position:fixed;z-index:8;pointer-events:none;text-shadow:2px 2px 0 var(--shadow), 4px 4px 0 rgba(0,0,0,.35)}
+  #hTime{top:14px;left:16px;font-size:13px;line-height:1.9}
+  #timebarOuter{width:186px;height:12px;border:3px solid var(--shadow);background:#2a2436;margin-top:4px}
+  #timebar{height:100%;width:100%;background:var(--good);transition:background .2s}
+  #hFam{top:66px;left:16px;font-size:9px;line-height:2.1}
+  #hFam span{color:#8e8878;opacity:.5;margin-right:10px;transition:color .25s,opacity .25s}
+  #hFam span.got{color:var(--hot);opacity:1}
+  #hScore{top:14px;right:16px;font-size:13px;line-height:1.9;text-align:right}
+  #hScore .best{font-size:9px;opacity:.72}
+  #hStreak{top:70px;left:50%;transform:translateX(-50%);font-size:22px;color:var(--hot);opacity:0;transition:opacity .2s}
+  #hToast{top:118px;left:50%;transform:translateX(-50%);font-size:11px;text-align:center;line-height:2.1}
+  #hToast div{opacity:.95}
+  #hHint{bottom:16px;left:50%;transform:translateX(-50%);font-size:9px;opacity:.55;text-align:center}
+  #pauseScreen .btn{margin:0}
+  #pauseScreen{gap:14px}
+  #hZoom{position:fixed;z-index:8;left:18px;bottom:18px;width:82px;height:82px;pointer-events:none}
+  #hZoom svg{position:absolute;inset:0;overflow:visible}
+  #zoomArc{transition:stroke .2s}
+  #zoomNum{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:19px;color:#eaf7a8;text-shadow:2px 2px 0 var(--shadow)
+  }
+  #zoomLabel{
+    position:absolute;left:50%;transform:translateX(-50%);top:86px;white-space:nowrap;
+    font-size:8px;color:#d6e84c;text-shadow:2px 2px 0 var(--shadow)
+  }
+  #map{position:fixed;z-index:8;right:16px;bottom:16px;width:132px;height:132px;border:3px solid var(--shadow);background:rgba(12,10,26,.62);image-rendering:pixelated}
+
+  .screen{
+    position:fixed;inset:0;z-index:10;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;justify-content:safe center;
+    overflow-y:auto;gap:18px;text-align:center;
+    background:radial-gradient(ellipse at 50% 40%, rgba(20,16,42,.72), rgba(8,6,18,.94));
+    padding:24px;
+  }
+  .screen[hidden]{display:none}
+  .screen h1{font-size:min(11vw,52px);margin:0;letter-spacing:2px;color:var(--hot);text-shadow:4px 4px 0 var(--shadow),8px 8px 0 rgba(255,60,90,.35)}
+  .screen h2{font-size:min(7vw,26px);margin:0;color:var(--ink);text-shadow:3px 3px 0 var(--shadow)}
+  .screen p{font-size:10px;line-height:2.2;margin:0;max-width:44ch;opacity:.85;text-shadow:2px 2px 0 var(--shadow)}
+  .keys{font-size:9px;line-height:2.4;opacity:.8;text-align:center;display:inline-block}
+  .keys b{color:var(--hot)}
+  .btn{
+    font-family:inherit;font-size:14px;color:var(--shadow);background:var(--hot);
+    border:0;padding:16px 26px;cursor:pointer;
+    box-shadow:6px 6px 0 var(--shadow);
+    pointer-events:auto;
+  }
+  .btn:active{transform:translate(3px,3px);box-shadow:3px 3px 0 var(--shadow)}
+  .tally{font-size:12px;line-height:2.4}
+  .tally b{color:var(--hot)}
+  .modes{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
+  .btn.mode{display:flex;flex-direction:column;align-items:center;gap:10px;width:254px;font-size:13px;padding:15px 18px;text-align:center}
+  .btn.mode h2{color:inherit;text-shadow:none;font-size:min(5.5vw,20px);white-space:nowrap}
+  .btn.ghost{background:#cfc9b8}
+  .btn.small{font-size:11px;padding:12px 20px}
+  .modeline{font-size:9px;color:var(--hot);opacity:.85;text-shadow:2px 2px 0 var(--shadow)}
+  .fam{display:flex;gap:26px;justify-content:center;margin:0 0 6px}
+  .fam figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px}
+  .fam svg{width:66px;height:77px;shape-rendering:crispEdges;filter:drop-shadow(3px 3px 0 rgba(0,0,0,.45))}
+  .fam figcaption{font-size:8px;color:var(--hot);line-height:1}
+  .fam .state{font-size:7px;color:var(--good);line-height:1}
+  .fam .state.miss{color:var(--bad)}
+  .cast{gap:30px;margin:0}
+  .cast svg{width:76px;height:89px}
+  .fam figure.lost svg{filter:grayscale(1) brightness(.85) opacity(.38)}
+  .fam figure.lost figcaption{color:#8e8878}
+  .fam figure.lost .state{color:#8e8878;opacity:.75}
+  /* ============ touch only ============ */
+  #pad{
+    position:fixed;z-index:9;touch-action:none;
+    right:calc(14px + env(safe-area-inset-right));
+    bottom:calc(14px + env(safe-area-inset-bottom));
+    display:flex;flex-direction:column;align-items:flex-end;gap:9px;
+  }
+  .padrow{display:flex;gap:9px;align-items:flex-end}
+  .padbtn{
+    font-family:inherit;font-size:11px;color:var(--shadow);background:var(--hot);
+    border:0;width:74px;height:56px;padding:0;
+    box-shadow:5px 5px 0 var(--shadow);opacity:.92;touch-action:none;
+    -webkit-tap-highlight-color:transparent;user-select:none;
+  }
+  .padbtn.big{width:98px;height:80px;font-size:13px}
+  .padbtn.on{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--shadow);background:#fff0a8}
+  .padbtn:active{transform:translate(3px,3px);box-shadow:2px 2px 0 var(--shadow)}
+  #padRun{background:#cfc9b8;width:66px;height:42px;font-size:10px}
+  #padRun.on{background:var(--good)}
+  #padPause{
+    position:fixed;z-index:9;left:50%;transform:translateX(-50%);
+    top:calc(9px + env(safe-area-inset-top));
+    font-family:inherit;font-size:13px;color:var(--shadow);background:#cfc9b8;
+    border:0;width:58px;height:34px;padding:0;
+    box-shadow:4px 4px 0 var(--shadow);
+    -webkit-tap-highlight-color:transparent;user-select:none;
+  }
+  #padPause:active{transform:translateX(-50%) translate(3px,3px);box-shadow:1px 1px 0 var(--shadow)}
+  body.touch #map{pointer-events:none}
+  body.touch .screen{touch-action:pan-y}
+
+  /* turn your phone */
+  #rotate{
+    position:fixed;inset:0;z-index:15;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;gap:22px;text-align:center;padding:24px;
+    background:radial-gradient(ellipse at 50% 40%, rgba(18,14,38,.985), rgba(8,6,18,1));
+  }
+  #rotate h2{font-size:min(4.4vw,17px);margin:0;color:var(--hot);text-shadow:3px 3px 0 var(--shadow);max-width:100%}
+  #rotate p{font-size:min(2.4vw,9px);margin:0;opacity:.7;line-height:2;max-width:100%}
+  #rotateIcon{animation:tip 2.4s ease-in-out infinite;transform-origin:50% 50%}
+  @keyframes tip{0%,38%{transform:rotate(0)}62%,100%{transform:rotate(-90deg)}}
+
+  /* landscape phone: the HUD is all fixed pixels, so pull it in */
+  @media (max-height:500px){
+    body.touch #hTime{top:calc(7px + env(safe-area-inset-top));left:calc(10px + env(safe-area-inset-left));font-size:11px;line-height:1.7}
+    body.touch #timebarOuter{width:118px;height:9px;border-width:2px}
+    body.touch #hFam{top:calc(50px + env(safe-area-inset-top));left:calc(10px + env(safe-area-inset-left));font-size:8px;line-height:1.8}
+    body.touch #hScore{top:calc(7px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));font-size:11px;line-height:1.7}
+    body.touch #map{
+      width:88px;height:88px;border-width:2px;bottom:auto;
+      top:calc(52px + env(safe-area-inset-top));right:calc(10px + env(safe-area-inset-right));
+    }
+    body.touch #hZoom{left:calc(12px + env(safe-area-inset-left));bottom:calc(12px + env(safe-area-inset-bottom));width:62px;height:62px}
+    body.touch #hZoom svg{width:62px;height:62px}
+    body.touch #zoomNum{font-size:15px}
+    body.touch #zoomLabel{top:66px;font-size:7px}
+    body.touch #hToast{top:96px;font-size:9px;line-height:1.9}
+    body.touch #hStreak{top:56px;font-size:17px}
+    body.touch #hHint{bottom:calc(10px + env(safe-area-inset-bottom));font-size:7px}
+    body.touch .padbtn{width:64px;height:48px;font-size:10px}
+    body.touch .padbtn.big{width:84px;height:68px;font-size:12px}
+    body.touch #padRun{width:58px;height:36px;font-size:9px}
+
+    body.touch .screen{gap:8px;padding:10px}
+    body.touch .screen h1{font-size:min(7.5vw,30px)}
+    body.touch .screen h2{font-size:20px}
+    body.touch .screen p{font-size:9px;line-height:1.9}
+    body.touch .cast{gap:14px}
+    body.touch .cast svg{width:44px;height:51px}
+    body.touch .keys{font-size:7px;line-height:2}
+    body.touch .btn.mode{width:206px;padding:10px 14px}
+    body.touch .btn.mode h2{font-size:17px}
+    body.touch .btn{font-size:12px;padding:12px 20px}
+    body.touch .btn.small{font-size:10px;padding:9px 16px}
+    body.touch .tally{font-size:10px;line-height:2}
+    body.touch .fam svg{width:48px;height:56px}
+    body.touch .fam{gap:18px}
+  }
+  /* short screens: pull the menu in rather than let it scroll */
+  @media (max-height:780px){
+    .screen{gap:11px}
+    .screen h1{font-size:min(9vw,38px)}
+    .cast{gap:20px}
+    .cast svg{width:54px;height:63px}
+    .keys{font-size:8px;line-height:2.1}
+    .btn.mode{padding:12px 16px;font-size:12px}
+  }
+  #loading{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#0a0912;font-size:12px}
+</style>
+</head>
+<body>
+<div id="view"></div>
+<div id="crust"></div>
+<div id="flash"></div>
+
+<div class="hud" id="hTime"><span id="hTimeLabel">TIME</span> <span id="timeval">90</span><div id="timebarOuter"><div id="timebar"></div></div></div>
+<div class="hud" id="hScore">SCORE <span id="scoreval">0</span><div class="best">BEST <span id="bestval">0</span></div></div>
+<div class="hud" id="hFam"><span id="famM">MUMMA</span><span id="famD">DADDA</span></div>
+<div class="hud" id="hStreak">x1</div>
+<div class="hud" id="hToast"></div>
+<div class="hud" id="hHint"><span class="only-desk">WASD MOVE &nbsp; SPACE JUMP &nbsp; SHIFT RUN &nbsp; B BARK &nbsp; ESC PAUSE</span><span class="only-touch">LEFT SIDE WALKS &nbsp; RIGHT SIDE LOOKS</span></div>
+<div id="hZoom" hidden>
+  <svg viewBox="0 0 48 48" width="82" height="82">
+    <circle cx="24" cy="24" r="20" fill="none" stroke="rgba(10,9,18,.55)" stroke-width="6"/>
+    <circle id="zoomArc" cx="24" cy="24" r="20" fill="none" stroke="#d6e84c" stroke-width="6"
+            stroke-dasharray="125.66" stroke-dashoffset="0" transform="rotate(-90 24 24)"/>
+  </svg>
+  <div id="zoomNum">0</div>
+  <div id="zoomLabel">ZOOMIES</div>
+</div>
+<canvas id="map" width="66" height="66"></canvas>
+
+<div id="pad" hidden>
+  <button class="padbtn" id="padRun" type="button">RUN</button>
+  <div class="padrow">
+    <button class="padbtn" id="padBark" type="button">BARK</button>
+    <button class="padbtn big" id="padJump" type="button">JUMP</button>
+  </div>
+</div>
+<button id="padPause" type="button" hidden>&#10073;&#10073;</button>
+
+<div id="rotate" hidden>
+  <svg id="rotateIcon" viewBox="0 0 24 40" width="66" height="110" shape-rendering="crispEdges">
+    <rect x="1" y="1" width="22" height="38" fill="#2a2436"/>
+    <rect x="3" y="5" width="18" height="30" fill="#8fc6de"/>
+    <rect x="9" y="36" width="6" height="2" fill="#8e8878"/>
+  </svg>
+  <h2>TURN YOUR PHONE</h2>
+  <p>Watson needs the wide view</p>
+</div>
+
+<div class="screen" id="startScreen">
+  <h1>WATSONATOR</h1>
+  <div id="castStrip"></div>
+  <p>You are Watson, a black labrador, and you have lost your Mumma and Dadda somewhere in town. Go find them!</p>
+  <div class="modes">
+    <button class="btn mode" id="modeChallenge">
+      <h2>TIME TRIAL</h2>
+    </button>
+    <button class="btn mode ghost" id="modeRoam">
+      <h2>FREE ROAM</h2>
+    </button>
+  </div>
+  <div class="keys only-desk">
+    <b>W A S D</b> &nbsp; walk<br>
+    <b>SHIFT</b> &nbsp; run<br>
+    <b>SPACE</b> &nbsp; jump<br>
+    <b>B</b> &nbsp; bark (scatters people)<br>
+    <b>Q</b> / <b>E</b> or drag mouse &nbsp; camera<br>
+    <b>ESC</b> &nbsp; pause<br>
+    <br>
+    Pro tip! Listen for Watson's whine &mdash; it quickens as you get closer
+  </div>
+  <div class="keys only-touch">
+    <b>DRAG THE LEFT SIDE</b> &nbsp; walk<br>
+    <b>DRAG THE RIGHT SIDE</b> &nbsp; look around<br>
+    <b>JUMP</b> &nbsp; <b>BARK</b> &nbsp; the buttons, bottom right<br>
+    <b>RUN</b> &nbsp; the toggle above them<br>
+    <b>&#10073;&#10073;</b> &nbsp; pause, top of the screen<br>
+    <br>
+    Pro tip! Listen for Watson's whine &mdash; it quickens as you get closer
+  </div>
+</div>
+
+<div class="screen" id="pauseScreen" hidden>
+  <h2>PAUSED</h2>
+  <div class="modeline" id="pauseMode">CHALLENGE</div>
+  <div class="tally" id="pauseTally"></div>
+  <button class="btn" id="resumeBtn">RESUME</button>
+  <button class="btn ghost small" id="restartBtn">START AGAIN</button>
+  <button class="btn ghost small" id="menuBtn">MAIN MENU</button>
+  <p class="only-desk" style="opacity:.5;font-size:9px">ESC to resume &nbsp; M for the menu</p>
+</div>
+
+<div class="screen" id="endScreen" hidden>
+  <h2 id="endTitle">TIME</h2>
+  <div class="tally">
+    BISCUITS <b id="endTreats">0</b><br>
+    SCORE <b id="endScore">0</b><br>
+    <span id="endFam" style="font-size:10px"></span><br>
+    <span id="endBest" style="font-size:10px;opacity:.8"></span>
+  </div>
+  <button class="btn" id="againBtn">AGAIN</button>
+  <button class="btn ghost small" id="endMenuBtn">MAIN MENU</button>
+  <p class="only-desk" style="opacity:.5;font-size:9px">ENTER to go again &nbsp; ESC for the menu</p>
+</div>
+
+<div id="loading">LOADING...</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+(function () {
+
+/* ============================================================
+   0. constants
+   ============================================================ */
+/* a phone, rather than a small window: no hover, coarse pointer. Everything
+   touch-specific hangs off this, so the desktop game is left exactly as it was. */
+const TOUCH = window.matchMedia('(hover:none) and (pointer:coarse)').matches;
+if (TOUCH) document.body.classList.add('touch');
+
+const PIXEL_SCALE   = 3.4;      // bigger = chunkier
+const ROUND_SECONDS = 90;
+const TREAT_TARGET  = 22;       // live treats in the world
+const DOG_SCALE     = 0.55;     // a labrador is about a third of a person tall
+const LEG_LEN       = 0.975;    // hip to the underside of the paw, in model units
+const DOG_R         = 0.55;
+const WALK_SPEED    = 9.5;
+const RUN_SPEED     = 16.0;
+const SWIM_SPEED    = 7.2;
+const SWIM_LIMIT    = -100;     // how far out to sea he is allowed
+const ZOOM_TIME     = 11;       // seconds of zoomies after fetching the ball
+const CAR_HIT_COST  = 4;        // seconds lost
+const SEA_LINE      = -46;      // beach ends / water starts
+const WADE_Z        = -43.5;    // toes wet
+const SWIM_Z        = -49;      // feet off the bottom
+const BEACH_LINE    = -30.5;    // promenade wall
+const BOUNDS        = { x0: -70, x1: 70, z0: -47, z1: 70 };
+
+const ROADS_X = [-48, -20, 8, 36];
+const ROADS_Z = [-19, 5, 31, 57];
+const ROAD_HALF = 5.6;
+const LANE = 2.0;
+const BLOCK_INSET = ROAD_HALF + 2.7;      // block edge, i.e. the back of the pavement
+const PAVE_W = (BLOCK_INSET - ROAD_HALF) * 2;   // paving reaches exactly to the kerb
+const PARK_OFF = ROAD_HALF - 1.2;
+
+const VROAD_Z0 = ROADS_Z[0] - ROAD_HALF;  // v-roads stop at the coast road
+const VROAD_Z1 = 78;
+const VJUNCTION = ROADS_Z[0];             // where side-street traffic joins the seafront
+const SPAWN = { x: 26, z: -37 };
+const WALL_GAPS = [-56, -28, 0, 28, 56];   // openings in the seafront wall
+const PIER = { x0: -4.4, x1: 4.4, zEnd: -86, zRampTop: -42, zRampBot: -36, deckY: 2.4 };
+
+/* ============================================================
+   1. tiny utils
+   ============================================================ */
+const rnd  = (a, b) => a + Math.random() * (b - a);
+const rndi = (a, b) => Math.floor(rnd(a, b + 1));
+const pick = a => a[Math.floor(Math.random() * a.length)];
+const clamp = (v, a, b) => v < a ? a : v > b ? b : v;
+const lerp = (a, b, t) => a + (b - a) * t;
+function angLerp(a, b, t) {
+  let d = ((b - a + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+  return a + d * t;
+}
+
+/* ============================================================
+   2. renderer / scene
+   ============================================================ */
+const SKY = 0x8fc6de;
+
+const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
+renderer.setPixelRatio(1);
+renderer.setClearColor(SKY);
+document.getElementById('view').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.fog = new THREE.Fog(SKY, 46, 138);
+
+const camera = new THREE.PerspectiveCamera(62, 1, 1.2, 320);
+
+function resize() {
+  const w = window.innerWidth, h = window.innerHeight;
+  const px = (TOUCH && w < 700) ? 2.4 : PIXEL_SCALE;   // else a phone renders ~114px across
+  renderer.setSize(Math.max(160, Math.floor(w / px)), Math.max(120, Math.floor(h / px)), false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+window.addEventListener('resize', resize);
+resize();
+
+scene.add(new THREE.HemisphereLight(0xcfe9f5, 0x6a6250, 0.68));
+const sun = new THREE.DirectionalLight(0xfff2d0, 0.55);
+sun.position.set(-40, 60, 30);
+scene.add(sun);
+
+/* ------------------------------------------------------------
+   PS1 vertex snapping: quantise clip-space so geometry wobbles
+   ------------------------------------------------------------ */
+const SNAP_PATCH = `
+  #include <project_vertex>
+  if (gl_Position.w > 0.0) {
+    float snapAmt = 260.0;
+    vec3 ndc = gl_Position.xyz / gl_Position.w;
+    ndc.xy = floor(ndc.xy * snapAmt + 0.5) / snapAmt;
+    gl_Position.xyz = ndc * gl_Position.w;
+  }
+`;
+function snapify(m) {
+  m.onBeforeCompile = sh => {
+    sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', SNAP_PATCH);
+  };
+  return m;
+}
+/** Lambert + the wobble. Pass snap:false for the huge flat planes: their corner
+    vertices sit far off-screen, so quantising them in clip space drags the
+    interpolated texture across the whole visible surface and the markings crawl. */
+function mat(color, opts) {
+  opts = opts || {};
+  const wobble = opts.snap !== false;
+  const o = Object.assign({}, opts);
+  delete o.snap;
+  // Lambert = per-vertex (Gouraud) lighting, exactly what the hardware did
+  const m = new THREE.MeshLambertMaterial(Object.assign({ color: color }, o));
+  return wobble ? snapify(m) : m;
+}
+
+/* ============================================================
+   3. procedural pixel textures
+   ============================================================ */
+const MAX_ANISO = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+function pixTex(w, h, draw, rx, ry) {
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.LinearMipMapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = MAX_ANISO;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx || 1, ry || 1);
+  return t;
+}
+/** clone a pixel texture with its own repeat, keeping the filter setup */
+function texRep(src, rx, ry) {
+  const t = src.clone();
+  t.needsUpdate = true;
+  t.magFilter = THREE.NearestFilter;
+  t.minFilter = THREE.LinearMipMapLinearFilter;
+  t.generateMipmaps = true;
+  t.anisotropy = MAX_ANISO;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rx, ry);
+  return t;
+}
+function speckle(ctx, w, h, base, dots, n, spread) {
+  ctx.fillStyle = base; ctx.fillRect(0, 0, w, h);
+  for (let i = 0; i < n; i++) {
+    ctx.fillStyle = dots[i % dots.length];
+    ctx.fillRect(rndi(0, w - 1), rndi(0, h - 1), 1, spread || 1);
+  }
+}
+
+const TEX = {};
+TEX.sand = pixTex(32, 32, (c, w, h) => speckle(c, w, h, '#e7d7a8', ['#f2e6bd', '#d8c592', '#efe0b2'], 210), 1, 1);
+TEX.grass = pixTex(32, 32, (c, w, h) => speckle(c, w, h, '#5d9b4a', ['#6fae56', '#4d8740', '#79b95e'], 260), 1, 1);
+TEX.pave = pixTex(16, 16, (c, w, h) => {
+  speckle(c, w, h, '#a9a49b', ['#b6b1a7', '#9b968d'], 60);
+  c.fillStyle = '#8e8981'; c.fillRect(0, 0, w, 1); c.fillRect(0, 0, 1, h);
+}, 1, 1);
+TEX.roadH = pixTex(16, 16, (c, w, h) => {
+  speckle(c, w, h, '#4a4750', ['#54515b', '#413e47'], 70);
+  c.fillStyle = '#e9e2c4'; c.fillRect(4, 7, 8, 2);
+}, 1, 1);
+TEX.roadV = pixTex(16, 16, (c, w, h) => {
+  speckle(c, w, h, '#4a4750', ['#54515b', '#413e47'], 70);
+  c.fillStyle = '#e9e2c4'; c.fillRect(7, 4, 2, 8);
+}, 1, 1);
+TEX.sea = pixTex(32, 32, (c, w, h) => {
+  c.fillStyle = '#2a6f9e'; c.fillRect(0, 0, w, h);
+  c.fillStyle = '#357fb0';
+  for (let y = 0; y < h; y += 2) for (let x = (y / 2) % 2; x < w; x += 2) c.fillRect(x, y, 1, 1);
+  c.fillStyle = '#4b9ac8';
+  for (let i = 0; i < 40; i++) c.fillRect(rndi(0, w - 3), rndi(0, h - 1), 3, 1);
+}, 42, 27);
+/* a 3x5 pixel alphabet, just enough for a band tee */
+const GLYPHS = {
+  B: ['110', '101', '110', '101', '110'],
+  O: ['111', '101', '101', '101', '111'],
+  N: ['101', '111', '111', '111', '101'],
+  J: ['111', '001', '001', '101', '111'],
+  V: ['101', '101', '101', '101', '010'],
+  I: ['111', '010', '010', '010', '111']
+};
+function pixText(ctx, word, x, y, px, colour) {
+  ctx.fillStyle = colour;
+  let cx = x;
+  for (const ch of word) {
+    const g = GLYPHS[ch];
+    if (g) {
+      for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
+        if (g[r][c] === '1') ctx.fillRect(cx + c * px, y + r * px, px, px);
+      }
+    }
+    cx += 4 * px;
+  }
+  return cx - x - px;
+}
+TEX.tee = pixTex(32, 32, (c, w, h) => {
+  c.fillStyle = '#141418'; c.fillRect(0, 0, w, h);
+  for (let i = 0; i < 40; i++) {                         // worn cotton
+    c.fillStyle = Math.random() < 0.5 ? '#1c1c22' : '#0e0e12';
+    c.fillRect(rndi(0, w - 1), rndi(0, h - 1), 1, 1);
+  }
+  pixText(c, 'BON', 6, 6, 2, '#f4f0e2');
+  pixText(c, 'JOVI', 2, 17, 2, '#f4f0e2');
+}, 1, 1);
+TEX.ball = pixTex(32, 32, (c, w, h) => {
+  c.fillStyle = '#cfe04a'; c.fillRect(0, 0, w, h);
+  for (let i = 0; i < 190; i++) {                      // felt
+    c.fillStyle = Math.random() < 0.5 ? '#dcec62' : '#b8cc3c';
+    c.fillRect(rndi(0, w - 1), rndi(0, h - 1), 1, 1);
+  }
+  // the seam: two mirrored curves that cross at the quarter points, which is
+  // what the real figure-of-eight looks like unwrapped
+  for (let x = 0; x < w; x++) {
+    const a = 0.3 * Math.cos(2 * Math.PI * x / w);
+    for (const yy of [(0.5 + a) * h, (0.5 - a) * h]) {
+      const y = Math.round(yy);
+      c.fillStyle = '#f6faec'; c.fillRect(x, clamp(y - 1, 0, h - 1), 1, 2);
+      c.fillStyle = '#c8d69a'; c.fillRect(x, clamp(y + 1, 0, h - 1), 1, 1);
+    }
+  }
+}, 1, 1);
+TEX.foam = pixTex(32, 16, (c, w, h) => {
+  c.clearRect(0, 0, w, h);
+  for (let y = 0; y < h; y++) {
+    const d = 1 - Math.abs((y + 0.5) / h * 2 - 1);      // fades out at both edges
+    for (let x = 0; x < w; x++) {
+      if (Math.random() < d * d * 1.3) {
+        c.fillStyle = 'rgba(255,255,255,' + (0.3 + 0.7 * d).toFixed(2) + ')';
+        c.fillRect(x, y, 1, 1);
+      }
+    }
+  }
+}, 1, 1);
+TEX.deck = pixTex(16, 16, (c, w, h) => {
+  speckle(c, w, h, '#9a7a52', ['#a98961', '#8a6c48'], 50);
+  c.fillStyle = '#7d6140'; c.fillRect(0, 0, w, 1); c.fillRect(0, 8, w, 1);
+}, 1, 1);
+TEX.sky = pixTex(8, 128, (c, w, h) => {
+  // dithered vertical gradient, top -> horizon
+  const top = [64, 132, 190], bot = [186, 219, 231];
+  for (let y = 0; y < h; y++) {
+    const t = y / (h - 1);
+    for (let x = 0; x < w; x++) {
+      const d = ((x + y) % 2) * 5 - 2.5;
+      const r = lerp(top[0], bot[0], t) + d, g = lerp(top[1], bot[1], t) + d, b = lerp(top[2], bot[2], t) + d;
+      c.fillStyle = 'rgb(' + (r | 0) + ',' + (g | 0) + ',' + (b | 0) + ')';
+      c.fillRect(x, y, 1, 1);
+    }
+  }
+}, 1, 1);
+
+const WALL_COLORS = [
+  ['#f0e4cd', '#3a4d63'], ['#dd9a72', '#43323c'], ['#c9d8dd', '#2f4a58'],
+  ['#e8cfa0', '#4a3d2c'], ['#b8c9a8', '#33452f'], ['#e6b7b0', '#4b3038'],
+  ['#cdbfd8', '#3b3450'], ['#f2ddb6', '#453a2e']
+];
+const buildTexCache = {};
+function buildingTex(idx, wUnits, hUnits) {
+  const key = idx;
+  if (!buildTexCache[key]) {
+    const [wall, win] = WALL_COLORS[idx];
+    buildTexCache[key] = pixTex(16, 16, (c, w, h) => {
+      speckle(c, w, h, wall, [wall, 'rgba(0,0,0,0.05)'], 24);
+      c.fillStyle = win;
+      c.fillRect(3, 4, 4, 6); c.fillRect(10, 4, 4, 6);
+      c.fillStyle = 'rgba(255,255,255,.22)';
+      c.fillRect(3, 4, 4, 2); c.fillRect(10, 4, 4, 2);
+      c.fillStyle = 'rgba(0,0,0,.16)'; c.fillRect(0, 15, w, 1);
+    });
+  }
+  return texRep(buildTexCache[key], Math.max(1, Math.round(wUnits / 4.2)), Math.max(1, Math.round(hUnits / 3.4)));
+}
+
+/* ============================================================
+   4. shared geometry helpers
+   ============================================================ */
+const BOX = new THREE.BoxGeometry(1, 1, 1);
+function box(w, h, d, material, x, y, z) {
+  const m = new THREE.Mesh(BOX, material);
+  m.scale.set(w, h, d);
+  m.position.set(x || 0, y || 0, z || 0);
+  return m;
+}
+/** ground overlay (road, pavement, shadow): biased forward in depth so it never z-fights */
+function decal(color, map, layer) {
+  return mat(color, {
+    map: map,
+    snap: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -1.5 * layer,
+    polygonOffsetUnits: -3 * layer
+  });
+}
+/** flat quad lying on the ground plane */
+function ground(w, d, material, x, y, z) {
+  const g = new THREE.PlaneGeometry(w, d);
+  g.rotateX(-Math.PI / 2);
+  const m = new THREE.Mesh(g, material);
+  m.position.set(x, y, z);
+  return m;
+}
+
+/* obstacles the dog (and camera) cannot pass through */
+const obstacles = [];   // {x0,z0,x1,z1,h,y0}
+function addObstacle(x0, z0, x1, z1, h, y0) {
+  obstacles.push({
+    x0: Math.min(x0, x1), x1: Math.max(x0, x1),
+    z0: Math.min(z0, z1), z1: Math.max(z0, z1),
+    h: h || 6, y0: y0 || 0
+  });
+}
+const blocks = [];      // building block rects, reused for pedestrians + minimap
+
+/* ============================================================
+   5. the world
+   ============================================================ */
+const world = new THREE.Group();
+scene.add(world);
+
+/* --- sky dome ------------------------------------------------ */
+{
+  const g = new THREE.SphereGeometry(260, 16, 12);
+  const m = new THREE.MeshBasicMaterial({ map: TEX.sky, side: THREE.BackSide, fog: false });
+  const dome = new THREE.Mesh(g, m);
+  dome.position.y = -20;
+  scene.add(dome);
+  // sun blob
+  const s = new THREE.Mesh(new THREE.CircleGeometry(14, 12), new THREE.MeshBasicMaterial({ color: 0xfff3c4, fog: false }));
+  s.position.set(-150, 78, -190); s.lookAt(0, 0, 0);
+  scene.add(s);
+  // a few chunky clouds
+  const cloudMat = new THREE.MeshBasicMaterial({ color: 0xf6f8fb, fog: false });
+  for (let i = 0; i < 12; i++) {
+    const c = new THREE.Group();
+    for (let j = 0; j < 4; j++) {
+      const s2 = rnd(8, 18);
+      c.add(box(s2, s2 * 0.5, s2 * 0.7, cloudMat, rnd(-14, 14), rnd(-2, 2), rnd(-6, 6)));
+    }
+    c.position.set(rnd(-200, 200), rnd(58, 88), rnd(-200, 120));
+    scene.add(c);
+  }
+}
+
+/* --- sea ----------------------------------------------------- */
+const seaGeo = new THREE.PlaneGeometry(460, 300, 44, 26);
+seaGeo.rotateX(-Math.PI / 2);
+const seaMesh = new THREE.Mesh(seaGeo, mat(0xffffff, { map: TEX.sea, snap: false }));
+seaMesh.position.set(0, -0.35, SEA_LINE - 148);
+world.add(seaMesh);
+const seaBase = Float32Array.from(seaGeo.attributes.position.array);
+const SEA_Z0 = SEA_LINE - 148;                 // the sea mesh's own origin in z
+/** height of the water surface at a world point */
+function waveAt(wx, wz, t) {
+  return Math.sin(wx * 0.075 + t * 1.25) * 0.42 + Math.sin((wz - SEA_Z0) * 0.11 - t * 0.95) * 0.34;
+}
+const SEA_Y = -0.35;
+
+/* breaking waves rolling to shore - flat foam on the surface */
+const waves = [];
+for (let i = 0; i < 5; i++) {
+  const len = rnd(90, 170);
+  const m = new THREE.MeshBasicMaterial({
+    map: texRep(TEX.foam, len / 7, 1),
+    transparent: true, opacity: 0.8, depthWrite: false, side: THREE.DoubleSide,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -8
+  });
+  const w = ground(len, 3.4, m, rnd(-60, 60), SEA_Y + 0.1, SEA_LINE - i * 14 - rnd(2, 10));
+  w.userData.speed = rnd(5, 9);
+  w.userData.mat = m;
+  world.add(w); waves.push(w);
+}
+/* wet sand strip */
+world.add(ground(300, 5, new THREE.MeshBasicMaterial({ color: 0xcfba86, transparent: true, opacity: 0.75, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }), 0, 0.02, SEA_LINE + 2));
+
+/* --- beach --------------------------------------------------- */
+const BEACH_D = Math.abs(SEA_LINE - BEACH_LINE) + 4;
+world.add(ground(300, BEACH_D, mat(0xffffff, { map: texRep(TEX.sand, 300 / 9, BEACH_D / 9), snap: false }), 0, 0, (SEA_LINE + BEACH_LINE) / 2));
+
+/* --- town ground: grass base then pavement/road on top ------- */
+world.add(ground(300, 130, mat(0xffffff, {
+  map: texRep(TEX.grass, 300 / 7, 130 / 7), snap: false,
+  polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4   // pushed back: everything wins over the base
+}), 0, -0.05, 20));
+
+/* roads */
+for (const z of ROADS_Z) {
+  world.add(ground(300, ROAD_HALF * 2, decal(0xffffff, texRep(TEX.roadH, 300 / 8, 1), 3), 0, 0.03, z));
+}
+const VLEN = VROAD_Z1 - VROAD_Z0;
+for (const x of ROADS_X) {
+  world.add(ground(ROAD_HALF * 2, VLEN, decal(0xffffff, texRep(TEX.roadV, 1, VLEN / 8), 3), x, 0.032, (VROAD_Z0 + VROAD_Z1) / 2));
+}
+
+/* --- promenade wall along the seafront ----------------------- */
+{
+  const wallMat = mat(0xd9d2c0), postMat = mat(0xc4bda8);
+  // openings so you can get between the sand and the town anywhere along the front
+  const GAP_W = 10;
+  const segs = [];
+  let cur = -150;
+  for (const g of WALL_GAPS) { segs.push([cur, g - GAP_W / 2]); cur = g + GAP_W / 2; }
+  segs.push([cur, 150]);
+  for (const [a, b] of segs) {
+    if (b - a < 0.6) continue;
+    world.add(box(b - a, 1.7, 1.3, wallMat, (a + b) / 2, 0.55, BEACH_LINE - 0.7));
+    addObstacle(a, BEACH_LINE - 1.5, b, BEACH_LINE, 1.45);   // low enough to hurdle
+    world.add(box(1.1, 2.2, 1.6, postMat, a + 0.4, 0.8, BEACH_LINE - 0.7));
+    world.add(box(1.1, 2.2, 1.6, postMat, b - 0.4, 0.8, BEACH_LINE - 0.7));
+  }
+  world.add(ground(300, 6.8, decal(0xffffff, texRep(TEX.pave, 300 / 3, 6.8 / 3), 1), 0, 0.01, BEACH_LINE + 3.2));
+}
+
+/* --- the pier ------------------------------------------------ */
+{
+  const deckMat = mat(0xffffff, { map: texRep(TEX.deck, 3, 26) });
+  const dLen = PIER.zRampTop - PIER.zEnd;
+  world.add(box(8.8, 0.5, dLen, deckMat, 0, PIER.deckY, (PIER.zRampTop + PIER.zEnd) / 2));
+  // ramp
+  const ramp = box(8.8, 0.5, 7.2, mat(0x9a7a52), 0, PIER.deckY / 2, (PIER.zRampBot + PIER.zRampTop) / 2);
+  ramp.rotation.x = Math.atan2(PIER.deckY, 6);   // high end at the deck, low end on the sand
+  world.add(ramp);
+  // railings + legs
+  const railMat = mat(0xe6e0cf), legMat = mat(0x6f5940);
+  for (const sx of [-1, 1]) {
+    for (let z = PIER.zRampTop; z > PIER.zEnd; z -= 4) {
+      world.add(box(0.3, 1.3, 0.3, railMat, sx * 4.1, PIER.deckY + 0.9, z));
+    }
+    world.add(box(0.35, 0.3, dLen, railMat, sx * 4.1, PIER.deckY + 1.5, (PIER.zRampTop + PIER.zEnd) / 2));
+    addObstacle(sx * 4.05 - 0.35, PIER.zEnd, sx * 4.05 + 0.35, PIER.zRampTop, PIER.deckY + 2.2, PIER.deckY);
+  }
+  world.add(box(8.8, 0.3, 0.35, railMat, 0, PIER.deckY + 1.5, PIER.zEnd + 0.2));
+  addObstacle(-4.4, PIER.zEnd, 4.4, PIER.zEnd + 0.6, PIER.deckY + 2.2, PIER.deckY);
+  for (let z = PIER.zRampTop - 2; z > PIER.zEnd; z -= 7) {
+    for (const sx of [-3.2, 3.2]) world.add(box(0.7, 8, 0.7, legMat, sx, PIER.deckY - 4, z));
+  }
+  // little kiosk at the end
+  world.add(box(4.2, 3.2, 3.4, mat(0xdd6b6b), 0, PIER.deckY + 1.85, PIER.zEnd + 5));
+  world.add(box(5.2, 0.5, 4.4, mat(0xf3ead4), 0, PIER.deckY + 3.6, PIER.zEnd + 5));
+  addObstacle(-2.1, PIER.zEnd + 3.3, 2.1, PIER.zEnd + 6.7, PIER.deckY + 4, PIER.deckY);
+}
+
+/* --- building blocks ----------------------------------------- */
+function makeBlocks() {
+  const xe = [BOUNDS.x0 - 6].concat(ROADS_X, [BOUNDS.x1 + 6]);
+  const ze = [BEACH_LINE - 1].concat(ROADS_Z, [BOUNDS.z1 + 6]);
+  const out = [];
+  for (let i = 0; i < xe.length - 1; i++) {
+    for (let j = 0; j < ze.length - 1; j++) {
+      const inset = BLOCK_INSET;
+      const x0 = xe[i] + (i === 0 ? 2 : inset), x1 = xe[i + 1] - (i === xe.length - 2 ? 2 : inset);
+      const z0 = ze[j] + inset, z1 = ze[j + 1] - (j === ze.length - 2 ? 2 : inset);
+      if (x1 - x0 < 8 || z1 - z0 < 8) continue;
+      out.push({ x0, z0, x1, z1 });
+    }
+  }
+  return out;
+}
+
+function fillBlockWithBuildings(b) {
+  const w = b.x1 - b.x0, d = b.z1 - b.z0;
+  const alongX = w >= d;
+  const span = alongX ? w : d;
+  const n = clamp(Math.round(span / 13), 1, 5);
+  let cursor = 0;
+  for (let i = 0; i < n; i++) {
+    const seg = span / n;
+    const gap = rnd(0.4, 1.6);
+    const len = seg - gap;
+    const depth = (alongX ? d : w) - rnd(0, 3);
+    const h = rnd(7, 24);
+    const ci = rndi(0, WALL_COLORS.length - 1);
+    const bw = alongX ? len : depth, bd = alongX ? depth : len;
+    const cx = alongX ? b.x0 + cursor + seg / 2 : (b.x0 + b.x1) / 2;
+    const cz = alongX ? (b.z0 + b.z1) / 2 : b.z0 + cursor + seg / 2;
+    const sideTex = buildingTex(ci, alongX ? bw : bd, h);
+    const wallM = mat(0xffffff, { map: sideTex });
+    const roofM = mat(new THREE.Color(WALL_COLORS[ci][1]).lerp(new THREE.Color(0x8a8378), 0.45).getHex());
+    const mesh = new THREE.Mesh(BOX, [wallM, wallM, roofM, roofM, wallM, wallM]);
+    mesh.scale.set(bw, h, bd);
+    mesh.position.set(cx, h / 2, cz);
+    world.add(mesh);
+    addObstacle(cx - bw / 2, cz - bd / 2, cx + bw / 2, cz + bd / 2, h);
+    // shopfront awning on the ground floor, facing the nearest road
+    if (Math.random() < 0.55) {
+      const aw = mat(pick([0xd94f4f, 0x2f7fb5, 0x3f9c5d, 0xe0a02c]));
+      if (alongX) world.add(box(bw * 0.8, 0.3, 1.8, aw, cx, 3.4, cz + bd / 2 + 0.9));
+      else world.add(box(1.8, 0.3, bd * 0.8, aw, cx + bw / 2 + 0.9, 3.4, cz));
+    }
+    // roof clutter
+    if (Math.random() < 0.5) world.add(box(rnd(1.5, 3), rnd(1, 2.5), rnd(1.5, 3), mat(0x8b8578), cx + rnd(-bw / 4, bw / 4), h + 1, cz + rnd(-bd / 4, bd / 4)));
+    cursor += seg;
+  }
+}
+
+/* --- props --------------------------------------------------- */
+const trunkMat = mat(0x6b4f34), leafMat = mat(0x3f7f45), leafMat2 = mat(0x4e9351);
+function tree(x, z, scale) {
+  const g = new THREE.Group();
+  g.add(box(0.7, 3.2, 0.7, trunkMat, 0, 1.6, 0));
+  const top = new THREE.Mesh(new THREE.IcosahedronGeometry(2.4, 0), leafMat);
+  top.position.y = 4.6; g.add(top);
+  const top2 = new THREE.Mesh(new THREE.IcosahedronGeometry(1.7, 0), leafMat2);
+  top2.position.set(0.7, 6.0, -0.4); g.add(top2);
+  g.position.set(x, 0, z);
+  g.scale.setScalar(scale || 1);
+  g.rotation.y = rnd(0, 6.28);
+  world.add(g);
+  addObstacle(x - 0.6, z - 0.6, x + 0.6, z + 0.6, 4);
+}
+function palm(x, z) {
+  const g = new THREE.Group();
+  const t = box(0.55, 7, 0.55, mat(0x9a7f57), 0, 3.5, 0);
+  t.rotation.z = rnd(-0.12, 0.12);
+  g.add(t);
+  const crown = new THREE.Group();
+  crown.position.y = 7;
+  for (let i = 0; i < 6; i++) {
+    const pivot = new THREE.Group();
+    pivot.rotation.y = i * 1.05 + rnd(-0.1, 0.1);
+    pivot.rotation.x = -0.34;
+    pivot.add(box(0.4, 0.22, 4.4, mat(0x4f9c4a), 0, 0, 2.1));
+    crown.add(pivot);
+  }
+  const nut = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55, 0), mat(0x7a5b32));
+  crown.add(nut);
+  g.add(crown);
+  g.position.set(x, 0, z);
+  world.add(g);
+  addObstacle(x - 0.5, z - 0.5, x + 0.5, z + 0.5, 8);
+}
+const lampPole = mat(0x3c3c46), lampGlow = new THREE.MeshBasicMaterial({ color: 0xffe9a8 });
+/** the arm hangs over (dx, dz) - always point it at the carriageway */
+function lamp(x, z, dx, dz) {
+  const g = new THREE.Group();
+  g.add(box(0.3, 6.4, 0.3, lampPole, 0, 3.2, 0));
+  g.add(box(1.4, 0.3, 0.3, lampPole, 0.6, 6.4, 0));
+  g.add(box(0.9, 0.5, 0.7, lampGlow, 1.1, 6.15, 0));
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.atan2(-(dz || 0), dx === undefined ? 1 : dx);
+  world.add(g);
+  addObstacle(x - 0.3, z - 0.3, x + 0.3, z + 0.3, 6.4);
+}
+function bench(x, z, rot) {
+  const g = new THREE.Group();
+  const m = mat(0x8a6540);
+  g.add(box(3.2, 0.25, 1.1, m, 0, 0.8, 0));
+  g.add(box(3.2, 1.0, 0.2, m, 0, 1.3, -0.45));
+  g.add(box(0.25, 0.8, 1.0, mat(0x40404a), -1.4, 0.4, 0));
+  g.add(box(0.25, 0.8, 1.0, mat(0x40404a), 1.4, 0.4, 0));
+  const r = rot || 0;
+  g.position.set(x, 0, z); g.rotation.y = r;
+  world.add(g);
+  const hx = Math.abs(Math.cos(r)) * 1.7 + Math.abs(Math.sin(r)) * 0.8;
+  const hz = Math.abs(Math.sin(r)) * 1.7 + Math.abs(Math.cos(r)) * 0.8;
+  addObstacle(x - hx, z - hz, x + hx, z + hz, 1.8);
+}
+function umbrella(x, z) {
+  const g = new THREE.Group();
+  g.add(box(0.2, 3.2, 0.2, mat(0xcfc7b4), 0, 1.6, 0));
+  const top = new THREE.Mesh(new THREE.ConeGeometry(2.6, 1.3, 8), mat(pick([0xe0533f, 0xf0c33a, 0x3f8fc4, 0xe4e0d4])));
+  top.position.y = 3.4; g.add(top);
+  g.position.set(x, 0, z);
+  g.rotation.y = rnd(0, 6.28);
+  world.add(g);
+}
+function beachBall(x, z) {
+  const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.75, 1), mat(pick([0xff6b6b, 0xffe066, 0x6bd3ff])));
+  b.position.set(x, 0.75, z);
+  world.add(b);
+}
+function rock(x, z, s) {
+  const r = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat(0x8b8578));
+  r.position.set(x, s * 0.4, z);
+  r.rotation.set(rnd(0, 3), rnd(0, 3), rnd(0, 3));
+  world.add(r);
+  // anything you can see above the waterline you should have to go round
+  if (s > 0.75) addObstacle(x - s * 0.72, z - s * 0.72, x + s * 0.72, z + s * 0.72, s * 1.4);
+}
+function bin(x, z) {
+  world.add(box(0.9, 1.3, 0.9, mat(0x3e5c47), x, 0.65, z));
+}
+
+/** is this point on tarmac? (used to keep furniture off the carriageway) */
+function onRoadAt(x, z, pad) {
+  pad = pad || 0;
+  for (const rz of ROADS_Z) if (Math.abs(z - rz) < ROAD_HALF + pad) return true;
+  for (const rx of ROADS_X) {
+    if (Math.abs(x - rx) < ROAD_HALF + pad && z > VROAD_Z0 - pad && z < VROAD_Z1) return true;
+  }
+  return false;
+}
+/** is there room here, clear of everything already placed at ground level? */
+function roomAt(x, z, r) {
+  for (const o of obstacles) {
+    if (o.y0 > 0.6) continue;
+    if (x > o.x0 - r && x < o.x1 + r && z > o.z0 - r && z < o.z1 + r) return false;
+  }
+  return true;
+}
+function nearWallGap(x, r) {
+  for (const g of WALL_GAPS) if (Math.abs(x - g) < r) return true;
+  return false;
+}
+
+/* --- assemble the town --------------------------------------- */
+{
+  const blockRects = makeBlocks();
+  for (const b of blockRects) {
+    const park = Math.random() < 0.16 && (b.x1 - b.x0) > 12;
+    blocks.push(b);
+    if (park) {
+      // lawn stops short of the kerb so a strip of paving still shows
+      const lw = b.x1 - b.x0 + PAVE_W - 3, ld = b.z1 - b.z0 + PAVE_W - 3;
+      world.add(ground(lw, ld, decal(0xffffff, texRep(TEX.grass, lw / 7, ld / 7), 2), (b.x0 + b.x1) / 2, 0.02, (b.z0 + b.z1) / 2));
+      const n = rndi(3, 6);
+      for (let i = 0; i < n; i++) tree(rnd(b.x0 + 1, b.x1 - 1), rnd(b.z0 + 1, b.z1 - 1), rnd(0.8, 1.25));
+      for (let i = 0; i < 2; i++) bench(rnd(b.x0, b.x1), rnd(b.z0, b.z1), rnd(0, 6.28));
+      b.park = true;
+    } else {
+      fillBlockWithBuildings(b);
+    }
+    // pavement ring
+    const pt = texRep(TEX.pave, (b.x1 - b.x0 + PAVE_W) / 3, (b.z1 - b.z0 + PAVE_W) / 3);
+    world.add(ground(b.x1 - b.x0 + PAVE_W, b.z1 - b.z0 + PAVE_W, decal(0xffffff, pt, 1), (b.x0 + b.x1) / 2, 0.01, (b.z0 + b.z1) / 2));
+  }
+
+  // Street furniture. The pavement band runs from ROAD_HALF to BLOCK_INSET out
+  // from each road centre, so everything sits at 6.6 and is rejected if it lands
+  // on a junction or clashes with something already placed.
+  const KERB = ROAD_HALF + 1.1;        // just inside the paving
+  const TREE_OFF = ROAD_HALF + 1.5;
+  for (const z of ROADS_Z) {
+    const coast = z === ROADS_Z[0];
+    for (let x = BOUNDS.x0 + 6; x < BOUNDS.x1 - 6; x += rnd(18, 27)) {
+      // the seafront road only has pavement on its inland side
+      const side = coast ? 1 : (Math.random() < 0.5 ? -1 : 1);
+      const px = x + rnd(-2, 2), pz = z + side * KERB;
+      if (!onRoadAt(px, pz, 1.0) && roomAt(px, pz, 0.6)) lamp(px, pz, 0, -side);
+      const bx = px + rnd(6, 13);
+      if (Math.random() < 0.5 && !onRoadAt(bx, pz, 1.0) && roomAt(bx, pz, 0.7)) bin(bx, pz);
+      const tx = px + rnd(-13, -6), tz = z + side * TREE_OFF;
+      if (Math.random() < 0.7 && !onRoadAt(tx, tz, 1.2) && roomAt(tx, tz, 1.0)) tree(tx, tz, 0.5);
+    }
+  }
+  for (const x of ROADS_X) {
+    for (let z = VROAD_Z0 + 9; z < BOUNDS.z1 - 6; z += rnd(20, 30)) {
+      const side = Math.random() < 0.5 ? -1 : 1;
+      const px = x + side * KERB, pz = z + rnd(-3, 3);
+      if (!onRoadAt(px, pz, 1.0) && roomAt(px, pz, 0.6)) lamp(px, pz, -side, 0);
+      const tz2 = pz + rnd(8, 14), tx2 = x + side * TREE_OFF;
+      if (Math.random() < 0.6 && !onRoadAt(tx2, tz2, 1.2) && roomAt(tx2, tz2, 1.0)) tree(tx2, tz2, 0.5);
+    }
+  }
+
+  // seafront: palms on the sand, benches and lamps on the promenade, all clear
+  // of the wall openings so they never block the route to the beach
+  for (let x = BOUNDS.x0 + 4; x < BOUNDS.x1 - 4; x += rnd(11, 16)) {
+    if (Math.abs(x) > 8 && Math.abs(x - SPAWN.x) > 9 && !nearWallGap(x, 6)) {
+      palm(x + rnd(-2, 2), BEACH_LINE - 5.5);
+    }
+    const bx = x + rnd(-3, 3);
+    if (Math.random() < 0.6 && !nearWallGap(bx, 7) && roomAt(bx, BEACH_LINE + 1.4, 0.9)) {
+      bench(bx, BEACH_LINE + 1.4, Math.PI);         // backs to the town, facing the sea
+    }
+    const lx = x + rnd(-4, 4);
+    if (Math.random() < 0.4 && !nearWallGap(lx, 6) && roomAt(lx, BEACH_LINE + 4.6, 0.8)) {
+      lamp(lx, BEACH_LINE + 4.6, 0, -1);            // arm out over the promenade
+    }
+  }
+  // beach clutter
+  for (let i = 0; i < 26; i++) {
+    const x = rnd(BOUNDS.x0 + 4, BOUNDS.x1 - 4), z = rnd(SEA_LINE + 5, BEACH_LINE - 3);
+    if (Math.abs(x) < 6) continue;
+    if (Math.hypot(x - SPAWN.x, z - SPAWN.z) < 8) continue;
+    const r = Math.random();
+    if (r < 0.4) umbrella(x, z);
+    else if (r < 0.6) beachBall(x, z);
+    else rock(x, z, rnd(0.5, 1.3));
+  }
+  // headland rocks in the shallows
+  for (let i = 0; i < 18; i++) {
+    const rx = rnd(-140, 140);
+    if (Math.abs(rx) < 9) continue;                 // keep the pier's channel clear
+    rock(rx, rnd(SEA_LINE - 26, SEA_LINE - 1), rnd(1, 3.5));
+  }
+}
+
+/* ============================================================
+   6. terrain height + walkability
+   ============================================================ */
+function onPier(x, z) { return x > PIER.x0 && x < PIER.x1 && z < PIER.zRampBot && z > PIER.zEnd; }
+function groundY(x, z) {
+  if (x > PIER.x0 && x < PIER.x1) {
+    if (z <= PIER.zRampTop && z > PIER.zEnd) return PIER.deckY + 0.25;
+    if (z <= PIER.zRampBot && z > PIER.zRampTop) {
+      const t = (PIER.zRampBot - z) / (PIER.zRampBot - PIER.zRampTop);
+      return (PIER.deckY + 0.25) * t;
+    }
+  }
+  return 0;
+}
+/** true if a treat could sit here */
+function walkable(x, z) {
+  if (x < BOUNDS.x0 + 2 || x > BOUNDS.x1 - 2) return false;
+  if (z < SEA_LINE + 2 && !onPier(x, z)) return false;
+  if (z > BOUNDS.z1 - 2) return false;
+  for (const o of obstacles) {
+    if (o.y0 > 0.6) continue;
+    if (x > o.x0 - 1.4 && x < o.x1 + 1.4 && z > o.z0 - 1.4 && z < o.z1 + 1.4) return false;
+  }
+  return true;
+}
+
+/* ============================================================
+   7. Watson
+   ============================================================ */
+const FUR = mat(0x2b2b34), FUR2 = mat(0x3b3b46), MUZZLE = mat(0x17171b);
+const dog = new THREE.Group();
+const dogParts = { legs: [], ears: [] };
+{
+  const body = box(1.6, 1.15, 2.7, FUR, 0, 1.55, 0);
+  dog.add(body);
+  dog.add(box(1.45, 0.9, 0.9, FUR2, 0, 1.45, 1.15));           // chest
+  dog.add(box(1.3, 1.0, 0.9, FUR, 0, 1.6, -1.25));             // haunches
+
+  const neck = box(0.95, 0.85, 0.9, FUR, 0, 1.95, 1.5);
+  dog.add(neck);
+  const head = new THREE.Group();
+  head.position.set(0, 2.25, 1.75);
+  head.add(box(1.05, 0.95, 1.05, FUR, 0, 0, 0));
+  head.add(box(0.62, 0.5, 0.8, FUR, 0, -0.15, 0.75));          // snout
+  head.add(box(0.34, 0.24, 0.16, MUZZLE, 0, -0.06, 1.18));     // nose
+  for (const sx of [-1, 1]) {
+    head.add(box(0.16, 0.16, 0.1, new THREE.MeshBasicMaterial({ color: 0x2b1d12 }), sx * 0.3, 0.16, 0.52));
+    const ear = box(0.24, 0.72, 0.5, FUR2, 0, -0.3, -0.05);
+    const pivot = new THREE.Group();
+    pivot.position.set(sx * 0.56, 0.32, 0.05);
+    pivot.rotation.z = sx * 0.16;
+    pivot.add(ear);
+    head.add(pivot);
+    dogParts.ears.push(pivot);
+  }
+  dog.add(head);
+  dogParts.head = head;
+
+  // collar + tag
+  dog.add(box(1.05, 0.24, 0.9, mat(0xc03a3a), 0, 1.95, 1.42));
+  dog.add(box(0.22, 0.24, 0.1, mat(0xffd23f), 0, 1.78, 1.9));
+
+  // Legs on pivots at the hips. The geometry is arranged so the underside of the
+  // paw sits at local y = 0, which means the group's y IS ground level - no
+  // sinking, whatever he has just walked out of.
+  const HIP = LEG_LEN;
+  const legGeoOffsets = [[-0.55, 1.0], [0.55, 1.0], [-0.55, -1.05], [0.55, -1.05]];
+  for (const [lx, lz] of legGeoOffsets) {
+    const p = new THREE.Group();
+    p.position.set(lx, HIP, lz);
+    p.add(box(0.38, 0.95, 0.42, FUR2, 0, -0.3, 0));            // tucks up into the body
+    p.add(box(0.44, 0.2, 0.58, MUZZLE, 0, -0.875, 0.08));      // paw, bottom at y = 0
+    dog.add(p);
+    dogParts.legs.push(p);
+  }
+
+  // tail
+  const tail = new THREE.Group();
+  tail.position.set(0, 1.95, -1.6);
+  tail.add(box(0.26, 0.26, 1.3, FUR, 0, 0.15, -0.6));
+  dog.add(tail);
+  dogParts.tail = tail;
+  dog.scale.setScalar(DOG_SCALE);
+}
+world.add(dog);
+
+/* fake blob shadows (no shadow maps — very PS1) */
+const blobGeo = new THREE.CircleGeometry(1, 10);
+blobGeo.rotateX(-Math.PI / 2);
+const blobMat = new THREE.MeshBasicMaterial({ color: 0x1a1626, transparent: true, opacity: 0.3, polygonOffset: true, polygonOffsetFactor: -7, polygonOffsetUnits: -14, depthWrite: false });
+function blob(r) {
+  const m = new THREE.Mesh(blobGeo, blobMat);
+  m.scale.setScalar(r);
+  world.add(m);
+  return m;
+}
+const dogShadow = blob(0.85);
+
+const P = {
+  pos: new THREE.Vector3(SPAWN.x, 0, SPAWN.z),
+  vel: new THREE.Vector3(),
+  yaw: 0,
+  y: 0, vy: 0, onGround: true,
+  dist: 0, stride: 0, stun: 0, invuln: 0, barkT: 0, wag: 0,
+  swim: 0, wasSwim: 0, paddle: 0, padT: 0, ambT: 0, wakeT: 0, zoom: 0, dustT: 0, hue: 0, whineT: 0
+};
+const tmpCol = new THREE.Color();
+
+/* ============================================================
+   7b. splashes, spray and ripples
+   ============================================================ */
+const PARTS = [];
+for (let i = 0; i < 96; i++) {
+  const m = new THREE.Mesh(BOX, new THREE.MeshBasicMaterial({
+    color: 0xffffff, transparent: true, opacity: 1, depthWrite: false
+  }));
+  m.visible = false;
+  world.add(m);
+  PARTS.push({ obj: m, life: 0, max: 1, vx: 0, vy: 0, vz: 0, g: 24 });
+}
+let partI = 0;
+function burst(x, y, z, n, power, color, size, grav, life, spread) {
+  const sp2 = spread === undefined ? 0.35 : spread;
+  for (let i = 0; i < n; i++) {
+    partI = (partI + 1) % PARTS.length;
+    const p = PARTS[partI];
+    p.obj.visible = true;
+    p.obj.material.color.setHex(color);
+    p.obj.material.opacity = 1;
+    p.obj.position.set(x + rnd(-sp2, sp2), y + rnd(-sp2 * 0.5, sp2 * 0.5), z + rnd(-sp2, sp2));
+    const sc = size * rnd(0.55, 1.5);
+    p.obj.scale.set(sc, sc, sc);
+    const a = rnd(0, 6.283), v = power * rnd(0.35, 1);
+    p.vx = Math.cos(a) * v;
+    p.vz = Math.sin(a) * v;
+    p.vy = power * rnd(0.6, 1.7);
+    p.g = grav === undefined ? 24 : grav;
+    p.life = p.max = life === undefined ? rnd(0.3, 0.7) : life * rnd(0.85, 1.15);
+  }
+}
+function updateParts(dt) {
+  for (const p of PARTS) {
+    if (p.life <= 0) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.obj.visible = false; continue; }
+    p.vy -= p.g * dt;
+    p.obj.position.x += p.vx * dt;
+    p.obj.position.y += p.vy * dt;
+    p.obj.position.z += p.vz * dt;
+    p.obj.rotation.x += dt * 5;
+    p.obj.rotation.z += dt * 4;
+    p.obj.material.opacity = p.life / p.max;
+  }
+}
+
+const RIPPLES = [];
+{
+  const rg = new THREE.RingGeometry(0.58, 1, 14);
+  rg.rotateX(-Math.PI / 2);
+  for (let i = 0; i < 6; i++) {
+    const m = new THREE.Mesh(rg, new THREE.MeshBasicMaterial({
+      color: 0xeaf6ff, transparent: true, opacity: 0.7, depthWrite: false, side: THREE.DoubleSide
+    }));
+    m.visible = false;
+    world.add(m);
+    RIPPLES.push({ obj: m, life: 0, max: 1, to: 5 });
+  }
+}
+let ripI = 0;
+function ripple(x, z, to) {
+  ripI = (ripI + 1) % RIPPLES.length;
+  const r = RIPPLES[ripI];
+  r.obj.visible = true;
+  r.obj.position.set(x, SEA_Y + 0.08, z);
+  r.obj.scale.setScalar(0.4);
+  r.to = to || 5;
+  r.life = r.max = 0.9;
+}
+function updateRipples(dt) {
+  for (const r of RIPPLES) {
+    if (r.life <= 0) continue;
+    r.life -= dt;
+    if (r.life <= 0) { r.obj.visible = false; continue; }
+    const k = 1 - r.life / r.max;
+    r.obj.scale.setScalar(lerp(0.4, r.to, k));
+    r.obj.material.opacity = 0.7 * (1 - k);
+  }
+}
+
+/* ============================================================
+   8. traffic
+   ============================================================ */
+const CAR_BODY = [0xd8443c, 0x2f6fb0, 0xe6c341, 0xe8e3d6, 0x35424f, 0x4b8f5c, 0xd97a2b, 0x8d5fa8];
+const cars = [];
+function makeCar(horiz) {
+  const g = new THREE.Group();
+  const c = pick(CAR_BODY);
+  const L = rnd(4.4, 6.2), W = 2.2, H = 1.15;
+  const bodyM = mat(c);
+  g.add(box(L, H, W, bodyM, 0, 0.85, 0));
+  g.add(box(L * 0.5, 0.85, W * 0.92, mat(c), -L * 0.05, 1.72, 0));
+  g.add(box(L * 0.42, 0.55, W * 0.94, new THREE.MeshBasicMaterial({ color: 0x9fd4e6 }), -L * 0.05, 1.82, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    g.add(box(0.9, 0.7, 0.35, mat(0x1b1b20), sx * L * 0.32, 0.42, sz * (W / 2 + 0.02)));
+  }
+  g.add(box(0.2, 0.3, 1.5, new THREE.MeshBasicMaterial({ color: 0xfff0b8 }), L / 2, 0.8, 0));
+  g.add(box(0.2, 0.3, 1.5, new THREE.MeshBasicMaterial({ color: 0xd8443c }), -L / 2, 0.8, 0));
+  world.add(g);
+  const car = {
+    obj: g, horiz, len: L, wid: W,
+    dir: Math.random() < 0.5 ? 1 : -1,
+    speed: rnd(13, 20), cruise: 0, lane: 0, honk: 0,
+    shadow: blob(Math.max(L, W) * 0.45)
+  };
+  car.cruise = car.speed;
+  if (horiz) {
+    const z = pick(ROADS_Z);
+    car.lane = z + car.dir * LANE;
+    car.p = rnd(BOUNDS.x0 - 40, BOUNDS.x1 + 40);
+    g.rotation.y = car.dir > 0 ? 0 : Math.PI;
+  } else {
+    const x = pick(ROADS_X);
+    car.lane = x - car.dir * LANE;
+    car.p = rnd(VJUNCTION, VROAD_Z1);
+    g.rotation.y = car.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
+  }
+  car.shadow.scale.set(horiz ? L * 0.48 : W * 0.5, 1, horiz ? W * 0.5 : L * 0.48);
+  return car;
+}
+for (let i = 0; i < 11; i++) cars.push(makeCar(true));
+for (let i = 0; i < 9; i++) cars.push(makeCar(false));
+
+/* parked cars along the kerbs (static obstacles) */
+for (const z of ROADS_Z) {
+  for (let x = BOUNDS.x0 + 8; x < BOUNDS.x1 - 8; x += rnd(16, 34)) {
+    if (Math.abs(x) < 7) continue;
+    let atJunction = false;
+    for (const rx of ROADS_X) if (Math.abs(x - rx) < ROAD_HALF + 4) atJunction = true;
+    if (atJunction) continue;
+    const g = new THREE.Group();
+    const c = pick(CAR_BODY);
+    g.add(box(4.8, 1.1, 2.1, mat(c), 0, 0.85, 0));
+    g.add(box(2.4, 0.8, 1.95, mat(c), -0.2, 1.68, 0));
+    g.add(box(2.0, 0.5, 2.0, new THREE.MeshBasicMaterial({ color: 0x9fd4e6 }), -0.2, 1.78, 0));
+    const zz = z + (Math.random() < 0.5 ? -1 : 1) * PARK_OFF;
+    g.position.set(x, 0, zz);
+    world.add(g);
+    blob(2).position.set(x, 0.05, zz);
+    addObstacle(x - 2.4, zz - 1.1, x + 2.4, zz + 1.1, 2);
+  }
+}
+
+/* ============================================================
+   9. townsfolk
+   ============================================================ */
+const SHIRTS = [0xd94f4f, 0x2f7fb5, 0x3f9c5d, 0xe0a02c, 0xe4e0d4, 0x8d5fa8, 0x2b3a4a, 0xe07ba0];
+const SKINS = [0xf0c8a0, 0xd9a274, 0xa9713f, 0x6d4527, 0x4a2f1b, 0xf6d7bb];
+const HAIRS = [0x2b1d12, 0x141414, 0x6b4a26, 0xb8894a, 0x8a8a8a, 0xc4593a];
+const peds = [];
+function makePerson(opts) {
+  opts = opts || {};
+  const g = new THREE.Group();
+  const skinC = opts.skin === undefined ? pick(SKINS) : opts.skin;
+  const hairC = opts.hair === undefined ? pick(HAIRS) : opts.hair;
+  const skin = mat(skinC);
+  const trous = mat(opts.trousers === undefined ? pick([0x33384a, 0x5a4a3a, 0x6d7b8c, 0x2b2b33]) : opts.trousers);
+
+  // torso: a material array lets a printed tee show only on the chest
+  const torso = new THREE.Mesh(BOX, opts.torsoMats || mat(pick(SHIRTS)));
+  torso.scale.set(0.85, 1.15, 0.5);
+  torso.position.set(0, 1.75, 0);
+  g.add(torso);
+
+  const head = box(0.6, 0.62, 0.6, skin, 0, 2.6, 0);
+  g.add(head);
+  const hair = mat(hairC);
+  g.add(box(0.66, 0.24, 0.66, hair, 0, 2.86, -0.02));
+  if (opts.longHair) {
+    g.add(box(0.64, 1.05, 0.2, hair, 0, 2.34, -0.36));      // down the back
+    g.add(box(0.18, 0.7, 0.5, hair, -0.35, 2.5, -0.05));    // either side of the face
+    g.add(box(0.18, 0.7, 0.5, hair, 0.35, 2.5, -0.05));
+  }
+  if (opts.curly) {
+    for (let i = 0; i < 9; i++) {
+      const curl = new THREE.Mesh(new THREE.IcosahedronGeometry(0.15, 0), hair);
+      const a = (i / 9) * 6.283;
+      curl.position.set(Math.cos(a) * 0.3, 2.9 + rnd(-0.05, 0.09), Math.sin(a) * 0.3 - 0.02);
+      g.add(curl);
+    }
+  }
+  if (opts.glasses) {
+    const rim = new THREE.MeshBasicMaterial({ color: 0x2b2b30 });
+    const lens = new THREE.MeshBasicMaterial({ color: 0xbfe2ef, transparent: true, opacity: 0.55 });
+    for (const sx of [-0.16, 0.16]) {
+      g.add(box(0.22, 0.2, 0.04, lens, sx, 2.63, 0.32));
+      g.add(box(0.26, 0.05, 0.05, rim, sx, 2.73, 0.32));
+      g.add(box(0.05, 0.2, 0.05, rim, sx + (sx < 0 ? -0.12 : 0.12), 2.63, 0.32));
+    }
+    g.add(box(0.1, 0.04, 0.04, rim, 0, 2.63, 0.32));
+  }
+
+  const legs = [];
+  for (const sx of [-1, 1]) {
+    const p = new THREE.Group();
+    p.position.set(sx * 0.22, 1.2, 0);
+    p.add(box(0.32, 1.2, 0.34, trous, 0, -0.6, 0));
+    g.add(p); legs.push(p);
+  }
+  const arms = [];
+  for (const sx of [-1, 1]) {
+    const p = new THREE.Group();
+    p.position.set(sx * 0.55, 2.2, 0);
+    p.add(box(0.24, 1.0, 0.26, skin, 0, -0.5, 0));
+    g.add(p); arms.push(p);
+  }
+  world.add(g);
+  return { obj: g, legs, arms, head, shadow: blob(0.55) };
+}
+
+/** a cheap but recognisable dreadnought */
+function makeGuitar() {
+  const g = new THREE.Group();
+  const wood = mat(0xd9a86a), neck = mat(0x6b4a2a);
+  g.add(box(0.74, 0.74, 0.22, wood, 0, -0.08, 0));          // lower bout
+  g.add(box(0.58, 0.5, 0.22, wood, 0, 0.36, 0));            // upper bout
+  g.add(box(0.78, 0.1, 0.24, mat(0x8a6540), 0, -0.44, 0));  // end block
+  g.add(box(0.24, 0.24, 0.05, mat(0x241a10), 0, 0.1, 0.12));  // sound hole
+  g.add(box(0.3, 0.06, 0.06, mat(0x3a2a1a), 0, -0.22, 0.13)); // bridge
+  g.add(box(0.16, 1.2, 0.13, neck, 0, 1.12, 0.02));         // neck
+  g.add(box(0.24, 0.3, 0.15, mat(0x3a2a1a), 0, 1.84, 0.02)); // headstock
+  g.add(box(0.09, 1.15, 0.02, new THREE.MeshBasicMaterial({ color: 0xe8e2cf }), 0, 1.08, 0.09));
+  return g;
+}
+/** walkers patrol the pavement ring around a rect */
+function assignRoute(p) {
+  const src = Math.random() < 0.78 && blocks.length
+    ? blocks[rndi(0, blocks.length - 1)]
+    : { x0: rnd(-60, 20), z0: rnd(SEA_LINE + 5, BEACH_LINE - 10), x1: 0, z1: 0, beach: true };
+  if (src.beach) { src.x1 = src.x0 + rnd(12, 30); src.z1 = Math.min(src.z0 + rnd(5, 10), BEACH_LINE - 2.5); }
+  const pad = src.beach ? 0 : 1.0;
+  p.rect = { x0: src.x0 - pad, z0: src.z0 - pad, x1: src.x1 + pad, z1: src.z1 + pad };
+  p.side = rndi(0, 3);
+  p.t = Math.random();
+  p.speed = rnd(2.0, 3.6);
+  p.flee = 0;
+}
+/** leg and arm swing shared by the crowd and the family */
+function poseWalk(p, amp, armZ) {
+  p.legs[0].rotation.x = Math.sin(p.walk) * amp;
+  p.legs[1].rotation.x = -Math.sin(p.walk) * amp;
+  p.arms[0].rotation.x = -Math.sin(p.walk) * amp * 0.8;
+  p.arms[1].rotation.x = Math.sin(p.walk) * amp * 0.8;
+  p.arms[0].rotation.z = armZ || 0;
+  p.arms[1].rotation.z = armZ ? -armZ : 0;
+}
+function routePoint(r, side, t) {
+  if (side === 0) return [lerp(r.x0, r.x1, t), r.z0];
+  if (side === 1) return [r.x1, lerp(r.z0, r.z1, t)];
+  if (side === 2) return [lerp(r.x1, r.x0, t), r.z1];
+  return [r.x0, lerp(r.z1, r.z0, t)];
+}
+for (let i = 0; i < 18; i++) {
+  const p = makePerson();
+  assignRoute(p);
+  peds.push(p);
+}
+/* a few people standing on the pier */
+for (let i = 0; i < 3; i++) {
+  const p = makePerson();
+  p.rect = { x0: rnd(-2.6, -1), z0: rnd(PIER.zEnd + 10, PIER.zRampTop - 6), x1: rnd(1, 2.6), z1: 0 };
+  p.rect.z1 = p.rect.z0 - rnd(4, 12);
+  p.side = rndi(0, 3); p.t = Math.random(); p.speed = rnd(1.2, 2.2); p.flee = 0;
+  p.pier = true;
+  peds.push(p);
+}
+
+/* ============================================================
+   9b. Mumma and Dadda
+   ------------------------------------------------------------
+   They walk the pavements like anyone else, which is the point: you
+   have to pick them out of the crowd. Distinctive silhouettes do the
+   work at this resolution - her long dark hair and printed tee, his
+   curls and the guitar.
+   ============================================================ */
+const PALE = 0xf6d7bb;
+const family = [];
+{
+  const teeBlack = mat(0x141418);
+  const teeFront = mat(0xffffff, { map: TEX.tee });
+  const mumma = makePerson({
+    skin: PALE, hair: 0x4a2f1c, longHair: true, glasses: true,
+    trousers: 0x33384a,
+    torsoMats: [teeBlack, teeBlack, teeBlack, teeBlack, teeFront, teeBlack]
+  });
+  mumma.name = 'MUMMA';
+  mumma.label = 'famM';
+  family.push(mumma);
+
+  const dadda = makePerson({
+    skin: PALE, hair: 0x5a3a20, curly: true,
+    trousers: 0x3d4657, torsoMats: mat(0x4e7a8c)
+  });
+  dadda.name = 'DADDA';
+  dadda.label = 'famD';
+  dadda.guitar = makeGuitar();
+  dadda.obj.add(dadda.guitar);
+  family.push(dadda);
+}
+/** 'sling' while he wanders, 'play' once found, 'aloft' to keep it dry */
+function guitarPose(d, mode) {
+  if (d.gMode === mode) return;
+  d.gMode = mode;
+  if (mode === 'play') {
+    d.guitar.position.set(0.06, 1.78, 0.36);
+    d.guitar.rotation.set(0.14, 0, -0.6);
+  } else if (mode === 'aloft') {
+    d.guitar.position.set(0.08, 3.1, 0.28);
+    d.guitar.rotation.set(1.42, 0, 0.08);
+  } else {
+    d.guitar.position.set(-0.12, 1.72, -0.36);
+    d.guitar.rotation.set(-0.1, 0, 0.55);
+  }
+}
+const famFound = [];      // in the order he finds them, for the conga line
+
+function resetFamily() {
+  famFound.length = 0;
+  for (const m of family) {
+    m.found = false;
+    m.follow = false;
+    assignRoute(m);
+    m.speed = rnd(1.5, 2.3);          // ambling, not striding
+    m.walk = 0;
+    m.strum = 0;
+    m.stroke = 0;
+    m.sink = 0;
+    m.wasSwim = 0;
+    m.obj.rotation.x = 0;
+  }
+  family[1].gMode = null;
+  guitarPose(family[1], 'sling');
+  el('famM').className = '';
+  el('famD').className = '';
+}
+
+/* ------------------------------------------------------------
+   9c. their faces, for the pause menu
+   ------------------------------------------------------------
+   Pixel maps in the same palette as the models, so the little portraits
+   read as the same two people you are hunting for out there. Greyed out
+   by CSS until Watson has actually found them.
+   ------------------------------------------------------------ */
+const PIX = {
+  h: '#4a2f1c',   // her hair
+  c: '#5a3a20',   // his curls
+  s: '#f6d7bb',   // skin
+  k: '#141418',   // glasses, eyes, her black tee
+  m: '#b5745c',   // mouth
+  w: '#ffffff',   // the print on her tee
+  t: '#4e7a8c',   // his shirt
+  g: '#b06b2e',   // the guitar
+  f: '#34343f',   // Watson's coat
+  l: '#1d1d25',   // his ears, hanging in their own shade
+  z: '#26262f',   // his muzzle
+  a: '#d0913f',   // his eyes
+  n: '#0b0b0e',   // his nose
+  r: '#c03a3a',   // his collar
+  y: '#ffd23f'    // the tag on it
+};
+function portrait(rows) {
+  let out = '<svg viewBox="0 0 12 14" width="58" height="68">';
+  for (let y = 0; y < rows.length; y++) {
+    const r = rows[y];
+    let x = 0;
+    while (x < r.length) {
+      const ch = r[x];
+      if (ch === '.') { x++; continue; }
+      let n = 1;
+      while (x + n < r.length && r[x + n] === ch) n++;
+      out += '<rect x="' + x + '" y="' + y + '" width="' + n + '" height="1" fill="' + PIX[ch] + '"/>';
+      x += n;
+    }
+  }
+  return out + '</svg>';
+}
+family[0].portrait = portrait([
+  '...hhhhhh...',
+  '..hhhhhhhh..',
+  '.hhhhhhhhhh.',
+  '.hhhhhhhhhh.',
+  '.hhsssssshh.',
+  '.hhkksskkhh.',
+  '.hhsssssshh.',
+  '.hhssmmsshh.',
+  '.hhsssssshh.',
+  '.hhh.ss.hhh.',
+  'hhkkkkkkkkhh',
+  'hhkkwwwwkkhh',
+  '.hkkkwwkkkh.',
+  '.kkkkkkkkkk.'
+]);
+family[1].portrait = portrait([
+  '..cc.cc.cc..',
+  '.cccccccccc.',
+  '.cccccccccc.',
+  '.ccsssssscc.',
+  '..ssssssss..',
+  '..sskssksss.',
+  '..ssssssss..',
+  '..sssmmsss..',
+  '..ssssssss..',
+  '.....ss.....',
+  '.ttttttttgt.',
+  '.tttttttgtt.',
+  '.ttgggggttt.',
+  '.ttgkggtttt.'
+]);
+
+const WATSON_FACE = portrait([
+  '...ffffff...',
+  '..ffffffff..',
+  'llffffffffll',
+  'llffffffffll',
+  'llfaffffafll',
+  'llffffffffll',
+  'llffzzzzffll',
+  'llffzzzzffll',
+  '.lffznnzffl.',
+  '..ffzzzzff..',
+  '...ffzzff...',
+  '...ffffff...',
+  '..rrrrrrrr..',
+  '..rrryyrrr..'
+]);
+
+/** the title screen cast: Watson, and the two he has lost */
+function castStrip() {
+  let out = '<div class="fam cast">' +
+    '<figure>' + WATSON_FACE + '<figcaption>WATSON</figcaption><div class="state">THAT IS YOU</div></figure>';
+  for (const m of family) {
+    out += '<figure>' + m.portrait + '<figcaption>' + m.name +
+           '</figcaption><div class="state miss">MISSING</div></figure>';
+  }
+  return out + '</div>';
+}
+
+/** the pause menu's family line: both of them, greyed out until found */
+function famStrip() {
+  let out = '<div class="fam">';
+  for (const m of family) {
+    out += '<figure class="' + (m.found ? 'found' : 'lost') + '">' + m.portrait +
+           '<figcaption>' + m.name + '</figcaption>' +
+           '<div class="state">' + (m.found ? 'FOUND' : 'MISSING') + '</div></figure>';
+  }
+  return out + '</div>';
+}
+
+/* ============================================================
+   10. seagulls
+   ============================================================ */
+const gulls = [];
+{
+  const gm = mat(0xf2f2ee), gm2 = mat(0xd8d8d0);
+  for (let i = 0; i < 12; i++) {
+    const g = new THREE.Group();
+    g.add(box(0.9, 0.4, 0.4, gm, 0, 0, 0));
+    const wl = new THREE.Group(), wr = new THREE.Group();
+    wl.add(box(0.5, 0.1, 1.5, gm2, 0, 0, -0.8));
+    wr.add(box(0.5, 0.1, 1.5, gm2, 0, 0, 0.8));
+    g.add(wl); g.add(wr);
+    g.add(box(0.3, 0.16, 0.16, mat(0xe8a33d), 0.55, 0.05, 0));
+    world.add(g);
+    gulls.push({
+      obj: g, wl, wr,
+      cx: rnd(-70, 70), cz: rnd(SEA_LINE - 30, BEACH_LINE - 6),
+      r: rnd(8, 26), a: rnd(0, 6.28), sp: rnd(0.28, 0.6), y: rnd(9, 22), flap: rnd(0, 6.28)
+    });
+  }
+}
+
+/* ============================================================
+   11. biscuits
+   ============================================================ */
+const treats = [];
+const BONE_W = mat(0xf5ecd2), BONE_G = mat(0xffd23f, { emissive: 0x6a4c00 });
+const BEAM_W = new THREE.MeshBasicMaterial({ color: 0xfff6d8, transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+const BEAM_G = new THREE.MeshBasicMaterial({ color: 0xffcf2a, transparent: true, opacity: 0.32, blending: THREE.AdditiveBlending, depthWrite: false, fog: false });
+function makeTreat(golden) {
+  const g = new THREE.Group();          // outer: bobs only
+  const spin = new THREE.Group();       // inner: turns
+  const m = golden ? BONE_G : BONE_W;
+  spin.add(box(0.34, 0.34, 1.1, m, 0, 0, 0));
+  for (const sz of [-1, 1]) for (const sx of [-1, 1]) {
+    const k = new THREE.Mesh(new THREE.IcosahedronGeometry(0.3, 0), m);
+    k.position.set(sx * 0.22, 0, sz * 0.58);
+    spin.add(k);
+  }
+  if (golden) {
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.07, 4, 10), new THREE.MeshBasicMaterial({ color: 0xfff2a8 }));
+    ring.rotation.x = Math.PI / 2;
+    spin.add(ring);
+    g.userData.ring = ring;
+  }
+  g.add(spin);
+  g.userData.spin = spin;
+  // a beam so you can spot it over the rooftops
+  const H = golden ? 24 : 14;
+  g.add(box(0.5, H, 0.5, golden ? BEAM_G : BEAM_W, 0, H / 2 - 0.4, 0));
+  world.add(g);
+  return g;
+}
+function spawnTreat() {
+  let x = 0, z = 0, ok = false, water = false;
+  for (let i = 0; i < 240 && !ok; i++) {
+    water = false;
+    const r = Math.random();
+    if (r < 0.09) {                       // on the pier
+      x = rnd(PIER.x0 + 1.5, PIER.x1 - 1.5); z = rnd(PIER.zEnd + 8, PIER.zRampBot - 2);
+    } else if (r < 0.21) {                // bobbing out in the water
+      x = rnd(BOUNDS.x0 + 8, BOUNDS.x1 - 8); z = rnd(SEA_LINE - 30, SEA_LINE - 3); water = true;
+    } else if (r < 0.5) {                 // on the sand
+      x = rnd(BOUNDS.x0 + 6, BOUNDS.x1 - 6); z = rnd(SEA_LINE + 4, BEACH_LINE - 3);
+    } else {                              // in town
+      x = rnd(BOUNDS.x0 + 6, BOUNDS.x1 - 6); z = rnd(BEACH_LINE - 3, BOUNDS.z1 - 6);
+    }
+    if (Math.hypot(x - P.pos.x, z - P.pos.z) < 14) continue;
+    let crowded = false;
+    for (const o of treats) if (Math.hypot(o.x - x, o.z - z) < 11) { crowded = true; break; }
+    if (crowded && i < 200) continue;
+    ok = water ? Math.abs(x) > 7 : walkable(x, z);
+  }
+  const golden = Math.random() < 0.12;
+  const obj = makeTreat(golden);
+  const t = {
+    obj, golden, x, z, water,
+    base: water ? SEA_Y + 0.7 : groundY(x, z) + 0.85,
+    ph: rnd(0, 6.28), taken: false
+  };
+  obj.position.set(x, t.base, z);
+  treats.push(t);
+  return t;
+}
+
+/* ============================================================
+   11c. the ball
+   ============================================================ */
+const BALL_AT = { x: 7.6, z: -80 };   // in the water just off the pier's east side
+let ballTaken = false;
+const BALL_GEO = new THREE.SphereGeometry(0.5, 10, 8);
+const BALL_MAT = mat(0xffffff, { map: TEX.ball });
+
+const ballObj = new THREE.Mesh(BALL_GEO, BALL_MAT);
+world.add(ballObj);
+
+/* the one he carries once he has fetched it - parented to his head, so it
+   moves with every turn and glance for the rest of the round */
+const heldBall = new THREE.Mesh(BALL_GEO, BALL_MAT);
+heldBall.scale.setScalar(0.48);
+heldBall.position.set(0, -0.22, 1.35);   // gripped at the muzzle
+heldBall.visible = false;
+dogParts.head.add(heldBall);
+
+function updateBall(dt, t) {
+  if (ballTaken) return;
+  ballObj.position.set(BALL_AT.x, SEA_Y + 0.5 + waveAt(BALL_AT.x, BALL_AT.z, t) * 0.85, BALL_AT.z);
+  ballObj.rotation.y += dt * 1.2;
+  ballObj.rotation.z = Math.sin(t * 1.7) * 0.28;
+  if (state !== 'play') return;
+  if (Math.hypot(BALL_AT.x - P.pos.x, BALL_AT.z - P.pos.z) > 2.3) return;
+
+  ballTaken = true;
+  ballObj.visible = false;
+  heldBall.visible = true;              // his now, for the rest of the round
+  score += 250;
+  P.zoom = ZOOM_TIME;
+  P.wag = 2.6;
+  SFX.zoomies();
+  SFX.splash(1);
+  burst(BALL_AT.x, SEA_Y + 0.3, BALL_AT.z, 12, 4.2, 0xffffff, 0.22, 20);
+  ripple(BALL_AT.x, BALL_AT.z, 9);
+  toast('HIS BALL!  +250', '#d6e84c');
+  toast('ZOOMIES!!!', '#ffd23f');
+  syncHud();
+}
+
+/* ============================================================
+   12. sound (all synthesised, no files)
+   ============================================================ */
+let AC = null;
+function audio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { AC = false; } }
+  if (AC && AC.state === 'suspended') AC.resume();
+  return AC;
+}
+function tone(f0, f1, dur, type, vol, delay) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime + (delay || 0);
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.type = type || 'square';
+  o.frequency.setValueAtTime(f0, t0);
+  if (f1 && f1 !== f0) o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t0 + dur);
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol || 0.12, t0 + 0.012);
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  o.connect(g); g.connect(ac.destination);
+  o.start(t0); o.stop(t0 + dur + 0.02);
+}
+/* --- dog voice -------------------------------------------------
+   A woof is a burst of breath plus a pitched growl, both sweeping
+   downward. Noise through a bandpass gives the breath, a lowpassed
+   sawtooth gives the voice. Beeps can't do this.
+   --------------------------------------------------------------- */
+let noiseBuf = null;
+function noise(ac) {
+  if (!noiseBuf) {
+    const n = Math.floor(ac.sampleRate * 0.6);
+    noiseBuf = ac.createBuffer(1, n, ac.sampleRate);
+    const d = noiseBuf.getChannelData(0);
+    let v = 0;
+    for (let i = 0; i < n; i++) {
+      v = v * 0.55 + (Math.random() * 2 - 1) * 0.45;   // slightly brown, less hissy
+      d[i] = v;
+    }
+  }
+  return noiseBuf;
+}
+/** a filtered burst of noise - the basis of every water sound here */
+function noiseHit(delay, f0, f1, dur, vol, type, q) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime + delay, end = t0 + dur;
+  const src = ac.createBufferSource();
+  src.buffer = noise(ac);
+  src.playbackRate.value = rnd(0.75, 1.35);
+  const f = ac.createBiquadFilter();
+  f.type = type || 'bandpass';
+  f.Q.value = q || 1;
+  f.frequency.setValueAtTime(f0, t0);
+  f.frequency.exponentialRampToValueAtTime(Math.max(40, f1), end);
+  const g = ac.createGain();
+  g.gain.setValueAtTime(0.0001, t0);
+  g.gain.exponentialRampToValueAtTime(vol, t0 + Math.min(0.03, dur * 0.25));
+  g.gain.exponentialRampToValueAtTime(0.0001, end);
+  src.connect(f); f.connect(g); g.connect(ac.destination);
+  src.start(t0); src.stop(end + 0.04);
+}
+function woof(delay, pitch, dur, vol, sweep) {
+  const ac = audio(); if (!ac) return;
+  const t0 = ac.currentTime + delay;
+  const end = t0 + dur;
+  const drop = sweep === undefined ? 0.45 : sweep;
+
+  // breath
+  const src = ac.createBufferSource();
+  src.buffer = noise(ac);
+  src.playbackRate.value = 0.7 + Math.random() * 0.5;
+  const bp = ac.createBiquadFilter();
+  bp.type = 'bandpass'; bp.Q.value = 0.9;
+  bp.frequency.setValueAtTime(pitch * 4.2, t0);
+  bp.frequency.exponentialRampToValueAtTime(pitch * 1.3, end);
+  const ng = ac.createGain();
+  ng.gain.setValueAtTime(0.0001, t0);
+  ng.gain.exponentialRampToValueAtTime(vol * 0.85, t0 + 0.014);
+  ng.gain.exponentialRampToValueAtTime(0.0001, end);
+  src.connect(bp); bp.connect(ng); ng.connect(ac.destination);
+  src.start(t0); src.stop(end + 0.03);
+
+  // voice
+  const o = ac.createOscillator();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(pitch * 1.8, t0);
+  o.frequency.exponentialRampToValueAtTime(pitch * drop, end);
+  const lp = ac.createBiquadFilter();
+  lp.type = 'lowpass'; lp.Q.value = 3.5;
+  lp.frequency.setValueAtTime(pitch * 8, t0);
+  lp.frequency.exponentialRampToValueAtTime(pitch * 2.2, end);
+  const og = ac.createGain();
+  og.gain.setValueAtTime(0.0001, t0);
+  og.gain.exponentialRampToValueAtTime(vol, t0 + 0.02);
+  og.gain.exponentialRampToValueAtTime(0.0001, end);
+  o.connect(lp); lp.connect(og); og.connect(ac.destination);
+  o.start(t0); o.stop(end + 0.03);
+}
+
+const SFX = {
+  bark() {
+    const p = 175 + Math.random() * 60;
+    woof(0, p, 0.17, 0.3);
+    if (Math.random() < 0.65) woof(0.21 + Math.random() * 0.06, p * 0.9, 0.14, 0.22);
+  },
+  collect(mult) { const b = 520 + mult * 70; tone(b, b * 1.5, 0.07, 'square', 0.11); tone(b * 1.5, b * 2, 0.09, 'square', 0.09, 0.06); },
+  golden() { [0, 0.07, 0.14, 0.21].forEach((d, i) => tone(660 * Math.pow(1.26, i), 0, 0.1, 'square', 0.11, d)); },
+  yelp() { woof(0, 430, 0.1, 0.26, 1.4); woof(0.09, 520, 0.34, 0.2, 0.32); },
+  horn() { tone(210, 210, 0.22, 'square', 0.09); tone(280, 280, 0.22, 'square', 0.07, 0.02); },
+  tick() { tone(880, 880, 0.05, 'square', 0.07); },
+  over() { [440, 330, 262, 196].forEach((f, i) => tone(f, f, 0.24, 'square', 0.12, i * 0.16)); },
+  jump() { tone(380, 620, 0.09, 'triangle', 0.09); },
+
+  // water
+  splash(power) {
+    const v = 0.16 + 0.2 * power;
+    noiseHit(0, 2600, 260, 0.34 + 0.2 * power, v, 'lowpass', 0.8);
+    noiseHit(0.015, 600, 1900, 0.16, v * 0.55, 'bandpass', 2.2);
+    noiseHit(0.09, 380, 130, 0.3, v * 0.35, 'lowpass', 1.2);       // the glug after
+  },
+  paddle(v) { noiseHit(0, rnd(2400, 3600), 700, 0.1, 0.055 * (v || 1), 'bandpass', 1.6); },
+  swimLoop() { noiseHit(0, rnd(700, 1200), 320, 0.26, 0.035, 'bandpass', 0.7); },
+  shake() {
+    for (let i = 0; i < 7; i++) noiseHit(i * 0.055, rnd(1800, 4200), rnd(500, 1100), 0.07, 0.06, 'bandpass', 2);
+    woof(0.42, 210, 0.12, 0.14, 0.6);
+  },
+  // family
+  whine() {
+    woof(0, 500, 0.16, 0.09, 1.5);          // rising, questioning
+    woof(0.14, 620, 0.2, 0.07, 1.25);
+  },
+  reunion() {
+    [0, 0.09, 0.18, 0.28].forEach((d, i) => tone(523 * Math.pow(1.19, i), 0, 0.14, 'square', 0.11, d));
+    woof(0.02, 250, 0.15, 0.3);
+    woof(0.22, 230, 0.13, 0.26);
+    woof(0.4, 265, 0.14, 0.22);
+  },
+  chord() {                                  // Dadda, strumming as he walks
+    const root = pick([196, 220, 262, 294]);
+    [1, 1.26, 1.5, 2].forEach((r, i) => {
+      const ac = audio(); if (!ac) return;
+      const t0 = ac.currentTime + i * 0.035;
+      const o = ac.createOscillator(); o.type = 'triangle';
+      o.frequency.setValueAtTime(root * r, t0);
+      const lp = ac.createBiquadFilter();
+      lp.type = 'lowpass'; lp.Q.value = 1.4;
+      lp.frequency.setValueAtTime(root * r * 6, t0);
+      lp.frequency.exponentialRampToValueAtTime(root * r * 1.6, t0 + 0.9);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(0.05, t0 + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.9);
+      o.connect(lp); lp.connect(g); g.connect(ac.destination);
+      o.start(t0); o.stop(t0 + 0.95);
+    });
+  },
+  zoomies() {
+    [0, 0.08, 0.16, 0.24, 0.34].forEach((d, i) => tone(392 * Math.pow(1.19, i), 0, 0.13, 'square', 0.12, d));
+    woof(0.05, 240, 0.16, 0.28);
+    woof(0.26, 215, 0.14, 0.24);
+  }
+};
+
+/* ============================================================
+   13. input
+   ============================================================ */
+const keys = {};
+window.addEventListener('keydown', e => {
+  if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
+  keys[e.code] = true;
+  if (e.code === 'KeyB') doBark();
+});
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
+
+let camYaw = Math.PI, camYawManual = 0;
+const drag = { on: false, x: 0 };
+const touch = { moveId: null, camId: null, mx: 0, my: 0, mdx: 0, mdy: 0, cx: 0 };
+const view = document.getElementById('view');
+
+view.addEventListener('mousedown', e => { drag.on = true; drag.x = e.clientX; });
+window.addEventListener('mouseup', () => { drag.on = false; });
+window.addEventListener('mousemove', e => {
+  if (!drag.on) return;
+  camYaw -= (e.clientX - drag.x) * 0.008;
+  drag.x = e.clientX;
+  camYawManual = 1.6;
+});
+view.addEventListener('touchstart', e => {
+  for (const t of e.changedTouches) {
+    if (t.clientX < window.innerWidth * 0.5 && touch.moveId === null) {
+      touch.moveId = t.identifier; touch.mx = t.clientX; touch.my = t.clientY; touch.mdx = 0; touch.mdy = 0;
+    } else if (touch.camId === null) {
+      touch.camId = t.identifier; touch.cx = t.clientX;
+    }
+  }
+  e.preventDefault();
+}, { passive: false });
+view.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) {
+    if (t.identifier === touch.moveId) {
+      touch.mdx = clamp((t.clientX - touch.mx) / 55, -1, 1);
+      touch.mdy = clamp((t.clientY - touch.my) / 55, -1, 1);
+    } else if (t.identifier === touch.camId) {
+      camYaw -= (t.clientX - touch.cx) * 0.010; touch.cx = t.clientX; camYawManual = 1.6;
+    }
+  }
+  e.preventDefault();
+}, { passive: false });
+function touchEnd(e) {
+  for (const t of e.changedTouches) {
+    if (t.identifier === touch.moveId) { touch.moveId = null; touch.mdx = 0; touch.mdy = 0; }
+    if (t.identifier === touch.camId) touch.camId = null;
+  }
+}
+view.addEventListener('touchend', touchEnd);
+view.addEventListener('touchcancel', touchEnd);
+
+function doBark() {
+  if (state !== 'play' || P.barkT > 0) return;
+  P.barkT = 0.45;
+  P.wag = 1.4;
+  SFX.bark();
+  for (const p of peds) {
+    if (Math.hypot(p.obj.position.x - P.pos.x, p.obj.position.z - P.pos.z) < 15) p.flee = 2.2;
+  }
+  for (const g of gulls) {
+    if (Math.hypot(g.cx - P.pos.x, g.cz - P.pos.z) < 30) { g.sp = Math.min(1.4, g.sp * 2.4); g.y = Math.min(26, g.y + 6); }
+  }
+  for (const c of cars) {
+    const cp = c.obj.position;
+    if (Math.hypot(cp.x - P.pos.x, cp.z - P.pos.z) < 18 && Math.random() < 0.5) { SFX.horn(); c.honk = 0.4; }
+  }
+}
+
+/* ============================================================
+   14. collision
+   ============================================================ */
+function resolveObstacles(pos, r, footY) {
+  const headY = footY + 1.5;
+  for (const o of obstacles) {
+    if (footY > o.h - 0.2) continue;                     // stood on top of it
+    if (headY < o.y0) continue;                          // passing underneath it
+    if (pos.x < o.x0 - r || pos.x > o.x1 + r || pos.z < o.z0 - r || pos.z > o.z1 + r) continue;
+    const cx = clamp(pos.x, o.x0, o.x1), cz = clamp(pos.z, o.z0, o.z1);
+    let dx = pos.x - cx, dz = pos.z - cz;
+    const d = Math.hypot(dx, dz);
+    if (d > 0.0001) {
+      if (d < r) { pos.x = cx + dx / d * r; pos.z = cz + dz / d * r; }
+    } else {
+      // dead centre: push out along the shallowest axis
+      const l = pos.x - o.x0, rr = o.x1 - pos.x, u = pos.z - o.z0, dn = o.z1 - pos.z;
+      const m = Math.min(l, rr, u, dn);
+      if (m === l) pos.x = o.x0 - r; else if (m === rr) pos.x = o.x1 + r;
+      else if (m === u) pos.z = o.z0 - r; else pos.z = o.z1 + r;
+    }
+  }
+}
+function carAABB(c) {
+  const p = c.obj.position;
+  const hx = (c.horiz ? c.len : c.wid) / 2, hz = (c.horiz ? c.wid : c.len) / 2;
+  return { x0: p.x - hx, x1: p.x + hx, z0: p.z - hz, z1: p.z + hz };
+}
+
+/* ============================================================
+   15. game state
+   ============================================================ */
+const MODES = {
+  challenge: { name: 'CHALLENGE', timed: true  },
+  roam:      { name: 'FREE ROAM', timed: false }
+};
+let mode = 'challenge';
+let MODE = MODES.challenge;
+
+let state = 'menu';
+let stateSince = 0;    // guards the restart key against a held jump
+let timeLeft = ROUND_SECONDS, score = 0, gathered = 0, streak = 0, lastGrab = -99, elapsed = 0;
+let best = 0;
+try { best = parseInt(localStorage.getItem('watsonator.best') || '0', 10) || 0; } catch (e) {}
+
+const el = id => document.getElementById(id);
+el('bestval').textContent = best;
+
+function toast(text, color) {
+  const d = document.createElement('div');
+  d.textContent = text;
+  if (color) d.style.color = color;
+  el('hToast').appendChild(d);
+  setTimeout(() => { d.style.transition = 'opacity .4s'; d.style.opacity = '0'; }, 700);
+  setTimeout(() => d.remove(), 1200);
+  while (el('hToast').children.length > 4) el('hToast').firstChild.remove();
+}
+
+/** puts the town, the dog and the scoreboard back to how they started */
+function resetRound() {
+  for (const t of treats) world.remove(t.obj);
+  treats.length = 0;
+  P.pos.set(SPAWN.x, 0, SPAWN.z);
+  P.vel.set(0, 0, 0); P.y = 0; P.vy = 0; P.yaw = 0;
+  P.stun = 0; P.invuln = 0; P.dist = 0; P.stride = 0;
+  P.swim = 0; P.wasSwim = 0; P.zoom = 0; P.paddle = 0;
+  resetFamily();
+  ballTaken = false;
+  ballObj.visible = true;
+  heldBall.visible = false;
+  el('hZoom').hidden = true;
+  for (const pt of PARTS) { pt.life = 0; pt.obj.visible = false; }
+  for (const r of RIPPLES) { r.life = 0; r.obj.visible = false; }
+  camYaw = Math.PI;
+  camFocus.set(P.pos.x, P.y, P.pos.z);
+  camBoom = 1;
+  timeLeft = ROUND_SECONDS; score = 0; gathered = 0; streak = 0; lastGrab = -99; elapsed = 0;
+  lastWhole = 99;
+  while (treats.length < TREAT_TARGET) spawnTreat();
+  el('hHint').style.opacity = '';
+}
+
+function startGame(m) {
+  audio();
+  if (m) { mode = m; MODE = MODES[m]; }
+  resetRound();
+  el('pauseScreen').hidden = true;
+  el('startScreen').hidden = true;
+  el('endScreen').hidden = true;
+  el('timebarOuter').hidden = !MODE.timed;
+  el('hTimeLabel').textContent = MODE.timed ? 'TIME' : 'OUT FOR';
+  state = 'play';
+  stateSince = performance.now();
+  showPad(true);
+  syncHud();
+}
+
+/** back to the mode select, from the pause menu or the score screen */
+function goMenu() {
+  resetRound();
+  el('pauseScreen').hidden = true;
+  el('endScreen').hidden = true;
+  el('startScreen').hidden = false;
+  el('hZoom').hidden = true;
+  el('timebarOuter').hidden = false;
+  el('hTimeLabel').textContent = 'TIME';
+  state = 'menu';
+  stateSince = performance.now();
+  showPad(false);
+  last = performance.now();     // don't bank the menu time as dt
+  audio();                      // the pause menu suspended the context
+  syncHud();
+}
+function endGame() {
+  state = 'over';
+  showPad(false);
+  el('hZoom').hidden = true;
+  stateSince = performance.now();
+  SFX.over();
+  const isBest = score > best;
+  if (isBest) {
+    best = score;
+    try { localStorage.setItem('watsonator.best', String(best)); } catch (e) {}
+    el('bestval').textContent = best;
+  }
+  const home = famFound.length === family.length;
+  el('endTitle').textContent = home ? 'HOME SAFE' : "TIME'S UP";
+  el('endFam').textContent = home
+    ? 'MUMMA AND DADDA FOUND'
+    : (famFound.length === 1
+        ? 'FOUND ' + famFound[0].name + ', LEFT THE OTHER OUT THERE'
+        : 'WATSON WENT HOME ALONE');
+  el('endFam').style.color = home ? '#7ee081' : '#ff5964';
+  el('endTreats').textContent = gathered;
+  el('endScore').textContent = score;
+  el('endBest').textContent = isBest ? 'NEW BEST. GOOD BOY, WATSON.' : 'BEST ' + best;
+  el('endScreen').hidden = false;
+}
+el('modeChallenge').addEventListener('click', () => { goFullscreen(); startGame('challenge'); });
+el('modeRoam').addEventListener('click', () => { goFullscreen(); startGame('roam'); });
+el('resumeBtn').addEventListener('click', resumeGame);
+el('restartBtn').addEventListener('click', () => { el('pauseScreen').hidden = true; audio(); startGame(mode); });
+el('menuBtn').addEventListener('click', goMenu);
+el('againBtn').addEventListener('click', () => startGame(mode));
+el('endMenuBtn').addEventListener('click', goMenu);
+
+/* ============================================================
+   15b. touch controls
+   ------------------------------------------------------------
+   The pad writes into the same `keys` map the keyboard writes into, so
+   nothing downstream ever has to know where the input came from.
+   ============================================================ */
+/** show the keyboard legend or the touch one, never both */
+for (const e of document.querySelectorAll('.only-touch')) e.hidden = !TOUCH;
+for (const e of document.querySelectorAll('.only-desk'))  e.hidden = TOUCH;
+
+/** the pad belongs to a round in progress, nothing else */
+function showPad(on) {
+  const want = TOUCH && on;
+  el('pad').hidden = !want;
+  el('padPause').hidden = !want;
+  if (!want) padReset();
+}
+/** pauseGame() drops every held key, so the buttons must let go too */
+function padReset() {
+  for (const id of ['padRun', 'padBark', 'padJump']) el(id).classList.remove('on');
+}
+/** held down, like holding the key */
+function padHold(id, code) {
+  const b = el(id);
+  b.addEventListener('touchstart', e => {
+    e.preventDefault(); keys[code] = true; b.classList.add('on');
+  }, { passive: false });
+  const release = e => { e.preventDefault(); keys[code] = false; b.classList.remove('on'); };
+  b.addEventListener('touchend', release, { passive: false });
+  b.addEventListener('touchcancel', release, { passive: false });
+}
+/** one press, one action */
+function padTap(id, fn) {
+  el(id).addEventListener('touchstart', e => { e.preventDefault(); fn(); }, { passive: false });
+}
+if (TOUCH) {
+  padHold('padJump', 'Space');
+  padTap('padBark', doBark);
+  padTap('padPause', pauseGame);
+  // run latches: nobody wants to hold a second thumb down for ninety seconds
+  el('padRun').addEventListener('touchstart', e => {
+    e.preventDefault();
+    const on = !keys.ShiftLeft;
+    keys.ShiftLeft = on;
+    el('padRun').classList.toggle('on', on);
+  }, { passive: false });
+}
+
+/** portrait is no way to play a chase camera: cover it and pause the round */
+function orient() {
+  if (!TOUCH) return;
+  const portrait = window.innerHeight > window.innerWidth;
+  el('rotate').hidden = !portrait;
+  if (portrait && state === 'play') pauseGame();
+}
+
+/** the browser's own chrome eats a quarter of a landscape phone */
+function goFullscreen() {
+  if (!TOUCH) return;
+  const d = document.documentElement;
+  if (document.fullscreenElement || !d.requestFullscreen) return;
+  try {
+    const r = d.requestFullscreen({ navigationUI: 'hide' });
+    if (r && r.catch) r.catch(() => {});
+  } catch (e) {}
+}
+
+/** m:ss, for the free roam clock that counts up instead of down */
+function clock(sec) {
+  sec = Math.max(0, Math.floor(sec));
+  return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+}
+function syncHud() {
+  if (MODE.timed || state === 'menu') {
+    el('timeval').textContent = Math.ceil(Math.max(0, timeLeft));
+    const f = clamp(timeLeft / ROUND_SECONDS, 0, 1);
+    el('timebar').style.width = (f * 100) + '%';
+    el('timebar').style.background = timeLeft < 10 ? '#ff5964' : timeLeft < 25 ? '#ffd23f' : '#7ee081';
+  } else {
+    el('timeval').textContent = clock(elapsed);
+  }
+  el('scoreval').textContent = score;
+  const s = el('hStreak');
+  const mult = Math.min(streak, 6);
+  if (streak > 1 && elapsed - lastGrab < 5) { s.textContent = 'x' + mult; s.style.opacity = '1'; }
+  else s.style.opacity = '0';
+}
+const ZOOM_C = 2 * Math.PI * 20;      // the arc's circumference
+function syncZoom() {
+  const on = P.zoom > 0;
+  el('hZoom').hidden = !on;
+  if (!on) return;
+  const frac = clamp(P.zoom / ZOOM_TIME, 0, 1);
+  el('zoomArc').style.strokeDashoffset = (ZOOM_C * (1 - frac)).toFixed(1);
+  el('zoomArc').setAttribute('stroke', P.zoom < 3 ? '#ff5964' : '#d6e84c');
+  el('zoomNum').textContent = Math.ceil(P.zoom);
+}
+function pauseGame() {
+  if (state !== 'play') return;
+  state = 'paused';
+  for (const k in keys) keys[k] = false;      // don't hold a key through the pause
+  el('pauseMode').textContent = MODE.name;
+  el('pauseTally').innerHTML =
+    famStrip() +
+    (MODE.timed
+      ? 'TIME LEFT <b>' + Math.ceil(Math.max(0, timeLeft)) + '</b><br>'
+      : 'OUT FOR <b>' + clock(elapsed) + '</b><br>') +
+    'BISCUITS <b>' + gathered + '</b><br>' +
+    'SCORE <b>' + score + '</b>';
+  el('pauseScreen').hidden = false;
+  showPad(false);
+  if (AC && AC.suspend) AC.suspend();
+}
+function resumeGame() {
+  if (state !== 'paused') return;
+  el('pauseScreen').hidden = true;
+  state = 'play';
+  stateSince = performance.now();
+  showPad(true);
+  last = performance.now();                   // don't bank the paused time as dt
+  audio();                                    // resumes the context
+}
+function flash() {
+  const f = el('flash');
+  f.style.opacity = '0.5';
+  setTimeout(() => { f.style.opacity = '0'; }, 90);
+}
+
+/* ============================================================
+   16. per-frame update
+   ============================================================ */
+
+function updateDog(dt, t) {
+  let ix = 0, iz = 0;
+  if (state === 'play' && P.stun <= 0) {
+    if (keys.KeyW || keys.ArrowUp) iz -= 1;
+    if (keys.KeyS || keys.ArrowDown) iz += 1;
+    if (keys.KeyA || keys.ArrowLeft) ix -= 1;
+    if (keys.KeyD || keys.ArrowRight) ix += 1;
+    ix += touch.mdx; iz += touch.mdy;
+  }
+  const mag = Math.hypot(ix, iz);
+  const fwdX = -Math.sin(camYaw), fwdZ = -Math.cos(camYaw);
+  const rgtX = -fwdZ, rgtZ = fwdX;
+  let dx = 0, dz = 0;
+  if (mag > 0.08) {
+    const k = Math.min(1, mag);
+    dx = (fwdX * -iz + rgtX * ix) / mag * k;
+    dz = (fwdZ * -iz + rgtZ * ix) / mag * k;
+  }
+
+  // 0 on dry sand, 1 fully afloat. Being under the pier's footprint only counts
+  // as land if he is actually up at deck height - otherwise he swims underneath.
+  const onDeck = onPier(P.pos.x, P.pos.z) && P.y > 1.2;
+  const swim = onDeck ? 0 : clamp((WADE_Z - P.pos.z) / (WADE_Z - SWIM_Z), 0, 1);
+  P.swim = swim;
+  const afloat = swim > 0.75;
+  const running = (keys.ShiftLeft || keys.ShiftRight) && swim < 0.3;
+  let top = afloat ? SWIM_SPEED : (running ? RUN_SPEED : WALK_SPEED) * lerp(1, 0.42, swim);
+  if (P.zoom > 0) top *= 1.8;
+
+  const wantX = dx * top, wantZ = dz * top;
+  const accel = P.stun > 0 ? 3 : 14;
+  P.vel.x = lerp(P.vel.x, wantX, 1 - Math.pow(0.0001, dt * (accel / 14)));
+  P.vel.z = lerp(P.vel.z, wantZ, 1 - Math.pow(0.0001, dt * (accel / 14)));
+  if (P.stun > 0) { P.vel.x *= Math.pow(0.06, dt); P.vel.z *= Math.pow(0.06, dt); }
+
+  P.pos.x += P.vel.x * dt;
+  P.pos.z += P.vel.z * dt;
+
+  // world limits - he can swim out, but not forever
+  P.pos.x = clamp(P.pos.x, BOUNDS.x0, BOUNDS.x1);
+  P.pos.z = Math.min(P.pos.z, BOUNDS.z1);
+  if (P.pos.z < SWIM_LIMIT) { P.pos.z = SWIM_LIMIT; P.vel.z = Math.max(0, P.vel.z); }
+  resolveObstacles(P.pos, DOG_R, P.y);
+
+  // jump / gravity
+  if ((keys.Space) && P.onGround && state === 'play' && P.stun <= 0 && swim < 0.4) {
+    P.vy = 13.2; P.onGround = false; SFX.jump();
+  }
+  const gy = groundY(P.pos.x, P.pos.z);
+  if (swim > 0.04) {
+    const bob = waveAt(P.pos.x, P.pos.z, t) * 0.7 * clamp((swim - 0.35) / 0.5, 0, 1);
+    const float = lerp(gy, -0.92, swim) + bob;
+    P.y = lerp(P.y, float, 1 - Math.pow(0.0006, dt));
+    P.vy = 0;
+    P.onGround = true;
+  } else {
+    if (P.onGround) {
+      if (gy < P.y - 0.12) { P.onGround = false; P.vy = 0; }
+      else P.y = lerp(P.y, gy, 1 - Math.pow(0.0005, dt));
+    }
+    if (!P.onGround) {
+      P.vy -= 32 * dt;
+      P.y += P.vy * dt;
+      if (P.y <= gy) { P.y = gy; P.vy = 0; P.onGround = true; }
+    }
+  }
+
+  const speed = Math.hypot(P.vel.x, P.vel.z);
+  if (speed > 0.6 && P.stun <= 0) P.yaw = angLerp(P.yaw, Math.atan2(P.vel.x, P.vel.z), 1 - Math.pow(0.0008, dt));
+  P.dist += speed * dt;
+
+  // splash in, shake off on the way out
+  if (swim > 0.25 && P.wasSwim <= 0.25) {
+    SFX.splash(clamp(speed / RUN_SPEED, 0.35, 1));
+    burst(P.pos.x, 0.15, P.pos.z, 9, 3.4, 0xffffff, 0.2, 22);
+    ripple(P.pos.x, P.pos.z, 5.5);
+    P.wag = 1.4;
+  } else if (swim <= 0.25 && P.wasSwim > 0.25) {
+    SFX.shake();
+    burst(P.pos.x, 0.5, P.pos.z, 8, 2.4, 0xf2fbff, 0.15, 26);
+    P.wag = 2.2;
+  }
+  P.wasSwim = swim;
+
+  if (swim > 0.5) {
+    P.padT -= dt;
+    if (P.padT <= 0 && speed > 1.6) {
+      P.padT = 0.22;
+      SFX.paddle();
+      burst(P.pos.x + Math.sin(P.yaw) * 0.6, P.y + 0.45, P.pos.z + Math.cos(P.yaw) * 0.6, 2, 1.7, 0xffffff, 0.14, 18);
+    }
+    P.ambT -= dt;
+    if (P.ambT <= 0) { P.ambT = rnd(0.5, 0.9); SFX.swimLoop(); }
+    P.wakeT -= dt;
+    if (P.wakeT <= 0 && speed > 2) {
+      P.wakeT = 0.3;
+      ripple(P.pos.x - Math.sin(P.yaw) * 0.9, P.pos.z - Math.cos(P.yaw) * 0.9, 2.8);
+    }
+  }
+
+  // zoomies
+  if (P.zoom > 0) {
+    P.zoom -= dt;
+    P.wag = 1.8;
+    // rainbow ribbon off his back end: barely any launch speed and almost no
+    // gravity, so it hangs in the air behind him rather than spraying
+    P.dustT -= dt;
+    if (P.dustT <= 0 && speed > 2) {
+      P.dustT = 0.022;
+      P.hue = (P.hue + 0.045) % 1;
+      tmpCol.setHSL(P.hue, 1, 0.58);
+      burst(
+        P.pos.x - Math.sin(P.yaw) * 0.8, Math.max(P.y, SEA_Y) + 0.5, P.pos.z - Math.cos(P.yaw) * 0.8,
+        2, 0.25, tmpCol.getHex(), 0.3, 1.1, 1.15, 0.22
+      );
+    }
+    if (P.zoom <= 0) { P.zoom = 0; toast('...phew', '#cfc9b8'); syncHud(); }
+  }
+
+  // Stride. Two things matter here. The rate saturates, because tying it to
+  // distance meant a zoomies sprint became a 7Hz blur where the legs sat at
+  // full splay and he read as squatting. And the body drops by exactly the
+  // amount an angled leg lifts the paw, so his feet stay on the ground through
+  // the whole cycle instead of the legs looking short at the extremes.
+  const cps = 1.15 + 2.25 * (1 - Math.exp(-speed / 11));      // strides a second
+  P.stride += dt * cps * Math.PI * 2;
+  const phase = P.stride;
+  const amp = 0.06 + clamp(speed / RUN_SPEED, 0, 1) * 0.5;
+  let bodyDrop = 0;
+  if (swim > 0.5) {
+    // doggy paddle: front paws fast and deep, back legs a lazy kick
+    P.paddle += dt * (6.5 + speed * 0.55);
+    dogParts.legs[0].rotation.x = Math.sin(P.paddle) * 0.9;
+    dogParts.legs[1].rotation.x = Math.sin(P.paddle + Math.PI) * 0.9;
+    dogParts.legs[2].rotation.x = Math.sin(P.paddle * 0.55) * 0.4;
+    dogParts.legs[3].rotation.x = Math.sin(P.paddle * 0.55 + Math.PI) * 0.4;
+  } else {
+    const sw = Math.sin(phase) * amp;
+    dogParts.legs[0].rotation.x = sw;
+    dogParts.legs[3].rotation.x = sw;
+    dogParts.legs[1].rotation.x = -sw;
+    dogParts.legs[2].rotation.x = -sw;
+    bodyDrop = LEG_LEN * (1 - Math.cos(sw)) * DOG_SCALE;
+  }
+  dog.position.set(P.pos.x, P.y - bodyDrop, P.pos.z);
+  dog.rotation.y = P.yaw;
+  dog.rotation.z = P.stun > 0 ? Math.sin(t * 26) * 0.26 : 0;
+  if (swim > 0.5) dog.rotation.x = -0.2 + Math.sin(P.paddle * 0.5) * 0.05;   // nose up
+  else dog.rotation.x = P.onGround ? -Math.cos(phase) * 0.03 * amp : clamp(-P.vy * 0.012, -0.2, 0.2);
+
+  P.wag = Math.max(0, P.wag - dt);
+  const wagRate = 7 + P.wag * 18 + speed * 0.6;
+  dogParts.tail.rotation.y = Math.sin(t * wagRate) * (0.4 + P.wag * 0.25);
+  dogParts.tail.rotation.x = swim > 0.5 ? -0.05 : -0.45 - P.wag * 0.2;   // rudder
+  for (let i = 0; i < 2; i++) {
+    dogParts.ears[i].rotation.x = Math.sin(phase + i) * 0.3 * amp + (P.barkT > 0 ? -0.3 : 0);
+  }
+
+  // head tracks the nearest biscuit
+  let near = null, nd = 22;
+  for (const tr of treats) {
+    if (tr.taken) continue;
+    const d = Math.hypot(tr.x - P.pos.x, tr.z - P.pos.z);
+    if (d < nd) { nd = d; near = tr; }
+  }
+  let hy = 0, hx = 0;
+  if (near) {
+    const a = Math.atan2(near.x - P.pos.x, near.z - P.pos.z) - P.yaw;
+    hy = clamp(Math.atan2(Math.sin(a), Math.cos(a)), -0.6, 0.6);
+  }
+  if (P.barkT > 0) hx = -0.35;
+  dogParts.head.rotation.y = angLerp(dogParts.head.rotation.y, hy, 1 - Math.pow(0.02, dt));
+  dogParts.head.rotation.x = lerp(dogParts.head.rotation.x, hx, 1 - Math.pow(0.02, dt));
+
+  P.barkT = Math.max(0, P.barkT - dt);
+  P.stun = Math.max(0, P.stun - dt);
+  P.invuln = Math.max(0, P.invuln - dt);
+  dog.visible = !(P.invuln > 0 && Math.floor(t * 14) % 2 === 0);
+
+  dogShadow.position.set(P.pos.x, groundY(P.pos.x, P.pos.z) + 0.05, P.pos.z);
+  const air = clamp(1 - (P.y - gy) / 6, 0.35, 1);
+  const wet = 1 - clamp((P.swim - 0.3) / 0.4, 0, 1);
+  dogShadow.scale.set(0.85 * air * wet, 1, 1.05 * air * wet);
+  return speed;
+}
+
+function updateCars(dt, t) {
+  for (const c of cars) {
+    const p = c.obj.position;
+    const fx = c.horiz ? c.dir : 0, fz = c.horiz ? 0 : c.dir;
+    const gap = c.len / 2 + 4.5 + c.speed * 0.22;
+    const ax = p.x + fx * gap, az = p.z + fz * gap;
+    let brake = false;
+    for (const o of cars) {
+      if (o === c) continue;
+      const a = carAABB(o);
+      if (ax > a.x0 - 1.1 && ax < a.x1 + 1.1 && az > a.z0 - 1.1 && az < a.z1 + 1.1) { brake = true; break; }
+    }
+    if (!brake && state === 'play' && Math.hypot(ax - P.pos.x, az - P.pos.z) < 3.4 && P.y < 1.9) {
+      brake = true;
+      if (c.honk <= 0 && Math.random() < 0.05) { SFX.horn(); c.honk = 0.5; }
+    }
+    c.honk = Math.max(0, c.honk - dt);
+    c.speed = brake ? Math.max(0, c.speed - 34 * dt) : Math.min(c.cruise, c.speed + 9 * dt);
+    c.p += c.speed * c.dir * dt;
+
+    if (c.horiz) {
+      if (c.dir > 0 && c.p > BOUNDS.x1 + 50) c.p = BOUNDS.x0 - 50;
+      if (c.dir < 0 && c.p < BOUNDS.x0 - 50) c.p = BOUNDS.x1 + 50;
+      p.set(c.p, 0, c.lane);
+    } else {
+      // recycle at the seafront junction, as if the car had turned into the
+      // side street - anywhere further south is beach, not road
+      if (c.dir > 0 && c.p > VROAD_Z1 + 24) c.p = VJUNCTION;
+      if (c.dir < 0 && c.p < VJUNCTION) c.p = VROAD_Z1 + 24;
+      p.set(c.lane, 0, c.p);
+    }
+    p.y = Math.sin(t * 9 + c.p * 0.3) * 0.03 * (c.speed / 16);
+    c.shadow.position.set(p.x, 0.05, p.z);
+
+    // squash the dog
+    if (state === 'play' && P.invuln <= 0 && P.y < 1.9 && c.speed > 1.5) {
+      const a = carAABB(c);
+      if (P.pos.x > a.x0 - DOG_R && P.pos.x < a.x1 + DOG_R && P.pos.z > a.z0 - DOG_R && P.pos.z < a.z1 + DOG_R) {
+        P.stun = 1.15; P.invuln = 2.2;
+        if (MODE.timed) timeLeft = Math.max(0, timeLeft - CAR_HIT_COST);
+        streak = 0;
+        const kx = c.horiz ? c.dir * 6 : (P.pos.x - a.x0 < a.x1 - P.pos.x ? -12 : 12);
+        const kz = c.horiz ? (P.pos.z - a.z0 < a.z1 - P.pos.z ? -12 : 12) : c.dir * 6;
+        P.vel.set(kx, 0, kz);
+        P.vy = 7; P.onGround = false;
+        SFX.yelp(); SFX.horn(); flash();
+        toast(MODE.timed ? 'OW!  -' + CAR_HIT_COST + 's' : 'OW!', '#ff5964');
+        syncHud();
+      }
+    }
+  }
+}
+
+function updatePeds(dt, t) {
+  for (const p of peds) {
+    const r = p.rect;
+    const len = (p.side % 2 === 0) ? Math.abs(r.x1 - r.x0) : Math.abs(r.z1 - r.z0);
+    p.flee = Math.max(0, p.flee - dt);
+    const sp = p.speed * (p.flee > 0 ? 2.6 : 1);
+    const step = (sp * dt) / Math.max(1, len);
+    p.t += step * (p.flee > 0 ? -1 : 1);
+    while (p.t > 1) { p.t -= 1; p.side = (p.side + 1) % 4; }
+    while (p.t < 0) { p.t += 1; p.side = (p.side + 3) % 4; }
+    const [x, z] = routePoint(r, p.side, p.t);
+    const prev = p.obj.position;
+    const dx = x - prev.x, dz = z - prev.z;
+    const gy = p.pier ? PIER.deckY + 0.25 : groundY(x, z);
+    p.obj.position.set(x, gy, z);
+    if (Math.hypot(dx, dz) > 0.001) p.obj.rotation.y = Math.atan2(dx, dz);
+
+    // walk cycle
+    p.walk = (p.walk || 0) + sp * dt * 2.4;
+    poseWalk(p, p.flee > 0 ? 1.15 : 0.62, p.flee > 0 ? 1.9 : 0);
+    p.obj.position.y += Math.abs(Math.sin(p.walk)) * 0.06;
+    p.shadow.position.set(x, gy + 0.05, z);
+
+    // dog nudges people out of the way
+    const ddx = prev.x - P.pos.x, ddz = prev.z - P.pos.z;
+    const d = Math.hypot(ddx, ddz);
+    if (d < 1.1 && d > 0.01) {
+      p.obj.position.x += ddx / d * (1.1 - d) * 0.6;
+      p.obj.position.z += ddz / d * (1.1 - d) * 0.6;
+      if (p.flee <= 0 && Math.random() < 0.02) p.flee = 1.4;
+    }
+  }
+}
+
+function findFamily(m) {
+  m.found = true;
+  m.follow = true;
+  famFound.push(m);
+  score += 200;
+  P.wag = 3;
+  el(m.label).className = 'got';
+  SFX.reunion();
+  for (let i = 0; i < 12; i++) {
+    burst(m.obj.position.x, 1.6, m.obj.position.z, 1, 2.2,
+      pick([0xff5f8d, 0xff2b5c, 0xffa8c4, 0xffd23f]), 0.26, 9, 0.9, 0.5);
+  }
+  toast(m.name + '!  +200', '#ff9ab5');
+  if (m === family[1]) guitarPose(m, 'play');
+  if (famFound.length === family.length) {
+    score += 500;
+    toast('FAMILY REUNITED!  +500', '#ffd23f');
+    SFX.zoomies();
+  }
+  syncHud();
+}
+
+function updateFamily(dt, t) {
+  // --- the ones still out there: wander, and warm/cold on the whine ---
+  let nearest = 1e9;
+  for (const m of family) {
+    if (m.follow) continue;
+    const r = m.rect;
+    const len = (m.side % 2 === 0) ? Math.abs(r.x1 - r.x0) : Math.abs(r.z1 - r.z0);
+    m.t += (m.speed * dt) / Math.max(1, len);
+    while (m.t > 1) { m.t -= 1; m.side = (m.side + 1) % 4; }
+    const [x, z] = routePoint(r, m.side, m.t);
+    const prev = m.obj.position;
+    const dx = x - prev.x, dz = z - prev.z;
+    const gy = groundY(x, z);
+    if (Math.hypot(dx, dz) > 0.001) m.obj.rotation.y = Math.atan2(dx, dz);
+    m.walk += m.speed * dt * 2.4;
+    poseWalk(m, 0.6);
+    m.obj.position.set(x, gy + Math.abs(Math.sin(m.walk)) * 0.06, z);
+    m.shadow.position.set(x, gy + 0.05, z);
+
+    const d = Math.hypot(x - P.pos.x, z - P.pos.z);
+    if (d < nearest) nearest = d;
+    if (state === 'play' && d < 2.8) findFamily(m);
+  }
+
+  // getting warmer: the whine speeds up as he closes in
+  if (state === 'play' && nearest < 32) {
+    P.whineT -= dt;
+    if (P.whineT <= 0) {
+      P.whineT = lerp(0.28, 1.9, clamp(nearest / 32, 0, 1));
+      SFX.whine();
+    }
+  } else {
+    P.whineT = 0.4;
+  }
+
+  // --- the ones he has found: flanking him, one either side, so they never
+  //     end up between the lens and the dog ---
+  const fwx = Math.sin(P.yaw), fwz = Math.cos(P.yaw);
+  for (let i = 0; i < famFound.length; i++) {
+    const m = famFound[i];
+    const side = i === 0 ? -1 : 1;
+    const tx = P.pos.x - fwx * 2.4 - fwz * side * 2.0;
+    const tz = P.pos.z - fwz * 2.4 + fwx * side * 2.0;
+    const pos = m.obj.position;
+    const dx = tx - pos.x, dz = tz - pos.z;
+    const d = Math.hypot(dx, dz) || 1;
+    let moved = 0;
+    if (d > 0.35) {
+      const sp = Math.min(31, 3.5 + d * 6);
+      moved = Math.min(d, sp * dt);
+      pos.x += dx / d * moved;
+      pos.z += dz / d * moved;
+      m.obj.rotation.y = moved > 0.02 ? Math.atan2(dx, dz) : P.yaw;
+    } else {
+      m.obj.rotation.y = angLerp(m.obj.rotation.y, P.yaw, 1 - Math.pow(0.02, dt));
+    }
+    if (pos.z < SWIM_LIMIT) pos.z = SWIM_LIMIT;
+
+    // they wade and swim after him, same gradient as the dog - including his
+    // pier rule, or they would sink through the deck the moment it reaches out
+    // past the waterline
+    const onDeck = onPier(pos.x, pos.z) && pos.y > 1.2;
+    const fs = onDeck ? 0 : clamp((WADE_Z - pos.z) / (WADE_Z - SWIM_Z), 0, 1);
+    if (fs > 0.25 && m.wasSwim <= 0.25) {
+      SFX.splash(0.55);
+      burst(pos.x, 0.2, pos.z, 7, 2.8, 0xffffff, 0.19, 22);
+      ripple(pos.x, pos.z, 4.5);
+    } else if (fs <= 0.25 && m.wasSwim > 0.25) {
+      SFX.splash(0.4);
+      burst(pos.x, 1.1, pos.z, 6, 2.2, 0xf2fbff, 0.14, 26);
+    }
+    m.wasSwim = fs;
+    m.sink = lerp(m.sink, fs, 1 - Math.pow(0.002, dt));
+    const afloat = fs > 0.5;
+
+    const gy = groundY(pos.x, pos.z);
+    resolveObstacles(pos, 0.5, afloat ? -0.5 : gy);
+    m.walk += moved * 2.4;
+
+    const dadda = m === family[1];
+    if (afloat) {
+      m.stroke += dt * (4.2 + moved / Math.max(dt, 0.001) * 0.07);
+      m.legs[0].rotation.x = Math.sin(m.stroke * 2.1) * 0.42;      // flutter kick
+      m.legs[1].rotation.x = -Math.sin(m.stroke * 2.1) * 0.42;
+      if (dadda) {
+        guitarPose(m, 'aloft');                                    // keeping it dry
+        m.arms[0].rotation.set(2.85 + Math.sin(m.stroke * 2) * 0.08, 0, -0.16);
+        m.arms[1].rotation.set(2.85 - Math.sin(m.stroke * 2) * 0.08, 0, 0.16);
+      } else {
+        m.arms[0].rotation.set(-1.4 + Math.sin(m.stroke) * 1.9, 0, -0.22);
+        m.arms[1].rotation.set(-1.4 + Math.sin(m.stroke + Math.PI) * 1.9, 0, 0.22);
+      }
+      m.obj.rotation.x = -0.12;
+      m.padT = (m.padT || 0) - dt;
+      if (m.padT <= 0 && moved > 0.02) { m.padT = rnd(0.35, 0.55); SFX.paddle(0.55); }
+    } else {
+      m.obj.rotation.x = 0;
+      if (dadda) {
+        guitarPose(m, 'play');
+        m.strum += dt * 7;
+        poseWalk(m, 0.15);
+        m.arms[0].rotation.set(-1.0 + Math.sin(m.strum) * 0.4, 0, -0.55);  // strumming hand
+        m.arms[1].rotation.set(-1.3, 0, 0.5);                              // on the neck
+        m.chordT = (m.chordT || 0) - dt;
+        if (m.chordT <= 0) { m.chordT = rnd(1.6, 2.8); SFX.chord(); }
+      } else {
+        poseWalk(m, moved > 0.01 ? 0.62 : 0.05);
+      }
+    }
+
+    // shoulders at the waterline, head clear even on a crest: the sea moves 0.76
+    // either way, so they ride it at 0.7 of that and sit high enough that the
+    // peak never covers them
+    const bob = waveAt(pos.x, pos.z, t) * 0.7 * clamp((m.sink - 0.35) / 0.5, 0, 1);
+    pos.y = lerp(gy + Math.abs(Math.sin(m.walk)) * 0.06, -2.15, m.sink) + bob;
+    m.shadow.position.set(pos.x, gy + 0.05, pos.z);
+    m.shadow.scale.setScalar(0.55 * (1 - clamp((m.sink - 0.25) / 0.4, 0, 1)));
+  }
+}
+
+function updateGulls(dt, t) {
+  for (const g of gulls) {
+    g.a += g.sp * dt;
+    g.sp = lerp(g.sp, 0.4, dt * 0.4);
+    g.y = lerp(g.y, 14, dt * 0.1);
+    const x = g.cx + Math.cos(g.a) * g.r, z = g.cz + Math.sin(g.a) * g.r;
+    g.obj.position.set(x, g.y + Math.sin(t * 1.4 + g.a) * 0.8, z);
+    g.obj.rotation.y = -g.a + Math.PI / 2;
+    g.flap += dt * (7 + g.sp * 8);
+    const f = Math.sin(g.flap) * 0.75;
+    g.wl.rotation.x = f; g.wr.rotation.x = -f;
+  }
+}
+
+let seaTick = 0;
+function updateSea(dt, t) {
+  seaTick++;
+  if (seaTick % 2 === 0) {
+    const pos = seaGeo.attributes.position;
+    const arr = pos.array;
+    for (let i = 0; i < arr.length; i += 3) {
+      arr[i + 1] = waveAt(seaBase[i], seaBase[i + 2] + SEA_Z0, t);
+    }
+    pos.needsUpdate = true;
+  }
+  TEX.sea.offset.y = -t * 0.02;
+  TEX.sea.offset.x = Math.sin(t * 0.1) * 0.01;
+  for (const w of waves) {
+    w.position.z += w.userData.speed * dt;
+    w.position.y = SEA_Y + 0.1 + waveAt(w.position.x, w.position.z, t) * 0.5;
+    const life = clamp((SEA_LINE + 1 - w.position.z) / 10, 0, 1);
+    w.userData.mat.opacity = 0.25 + life * 0.6;
+    w.userData.mat.map.offset.x += dt * 0.05;
+    if (w.position.z > SEA_LINE + 1.5) {
+      w.position.z = SEA_LINE - rnd(40, 90);
+      w.position.x = rnd(-70, 70);
+      w.userData.speed = rnd(5, 9);
+    }
+  }
+}
+
+function updateTreats(dt, t) {
+  for (let i = treats.length - 1; i >= 0; i--) {
+    const tr = treats[i];
+    tr.obj.position.y = tr.water
+      ? SEA_Y + 0.7 + waveAt(tr.x, tr.z, t) * 0.85
+      : tr.base + Math.sin(t * 2.4 + tr.ph) * 0.22;
+    tr.obj.userData.spin.rotation.y += dt * (tr.golden ? 2.6 : 1.7);
+    if (tr.obj.userData.ring) {
+      const s = 1 + Math.sin(t * 3 + tr.ph) * 0.18;
+      tr.obj.userData.ring.scale.set(s, s, s);
+      tr.obj.userData.ring.rotation.z += dt * 3;
+    }
+    if (state !== 'play') continue;
+    const d = Math.hypot(tr.x - P.pos.x, tr.z - P.pos.z);
+    if (d < 2.0 && Math.abs(P.y + 0.7 - tr.base) < 2.6) {
+      // nom
+      world.remove(tr.obj);
+      treats.splice(i, 1);
+      gathered++;
+      if (elapsed - lastGrab < 5) streak++; else streak = 1;
+      lastGrab = elapsed;
+      const mult = Math.min(streak, 6);
+      const pts = (tr.golden ? 60 : 10) * mult;
+      score += pts;
+      P.wag = 1.6;
+      if (tr.golden) { SFX.golden(); toast('GOLDEN!  +' + pts, '#ffd23f'); }
+      else { SFX.collect(mult); toast('+' + pts + (mult > 1 ? '  x' + mult : ''), '#f7f2e0'); }
+      spawnTreat();
+      syncHud();
+    }
+  }
+}
+
+/* The rig: a focus point that chases him closely, with the boom hung off it at a
+   fixed offset. Smoothing the camera's world position instead (what this used to
+   do) is what made it lag and swing on every turn. */
+const camFocus = new THREE.Vector3(P.pos.x, 0, P.pos.z);
+let camBoom = 1;        // 1 = full length, less when scenery is in the way
+
+function updateCamera(dt, speed) {
+  camYawManual = Math.max(0, camYawManual - dt);
+  if (state === 'menu') {
+    camYaw += dt * 0.14;
+  } else if (camYawManual <= 0 && speed > 2) {
+    // only swing in behind him when he is heading away from the lens. Doing it
+    // while he walks toward the camera would reverse what "back" means mid-hold.
+    const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
+    const away = (P.vel.x * fx + P.vel.z * fz) / speed;
+    if (away > 0.3) camYaw = angLerp(camYaw, P.yaw + Math.PI, 1 - Math.pow(0.03, dt));
+  }
+
+  // horizontal tracking is tight; vertical is loose so the swell and his stride
+  // do not rock the whole picture
+  const fast = 1 - Math.pow(1e-7, dt);
+  camFocus.x = lerp(camFocus.x, P.pos.x, fast);
+  camFocus.z = lerp(camFocus.z, P.pos.z, fast);
+  camFocus.y = lerp(camFocus.y, P.y, 1 - Math.pow(0.06, dt));
+
+  const dist = state === 'menu' ? 15 : 11.4 + Math.min(speed, RUN_SPEED) * 0.14;
+  const height = state === 'menu' ? 7.6 : 6.8;
+
+  let want = 1;
+  for (let k = 0; k < 10; k++) {
+    const f = 1 - k * 0.08;
+    want = f;
+    const px = camFocus.x + Math.sin(camYaw) * dist * f;
+    const pz = camFocus.z + Math.cos(camYaw) * dist * f;
+    const py = camFocus.y + height * (1 + (1 - f) * 2.4);
+    let hit = false;
+    for (const o of obstacles) {
+      if (py > o.h + 1.0) continue;
+      if (px > o.x0 - 0.9 && px < o.x1 + 0.9 && pz > o.z0 - 0.9 && pz < o.z1 + 0.9) { hit = true; break; }
+    }
+    if (!hit) break;
+  }
+  // duck in quickly, come back out gently, so passing a corner does not pop
+  camBoom = want < camBoom
+    ? lerp(camBoom, want, 1 - Math.pow(0.0005, dt))
+    : lerp(camBoom, want, 1 - Math.pow(0.05, dt));
+
+  const cx = camFocus.x + Math.sin(camYaw) * dist * camBoom;
+  const cz = camFocus.z + Math.cos(camYaw) * dist * camBoom;
+  const cy = Math.max(camFocus.y + height * (1 + (1 - camBoom) * 2.4), groundY(cx, cz) + 2.2);
+  camera.position.set(cx, cy, cz);
+  camera.lookAt(camFocus.x, camFocus.y + 1.5, camFocus.z);
+}
+
+/* ============================================================
+   17. minimap
+   ============================================================ */
+const mapCv = el('map'), mapCtx = mapCv.getContext('2d');
+const MW = mapCv.width, MH = mapCv.height;
+const MX0 = -74, MX1 = 74, MZ0 = -106, MZ1 = 76;
+const mx = x => ((x - MX0) / (MX1 - MX0)) * MW;
+const mz = z => ((z - MZ0) / (MZ1 - MZ0)) * MH;
+let mapTick = 0;
+function drawMap() {
+  mapCtx.clearRect(0, 0, MW, MH);
+  mapCtx.fillStyle = '#2a6f9e'; mapCtx.fillRect(0, 0, MW, mz(SEA_LINE));
+  mapCtx.fillStyle = '#5d9b4a'; mapCtx.fillRect(0, mz(BEACH_LINE), MW, MH);
+  mapCtx.fillStyle = '#e7d7a8'; mapCtx.fillRect(0, mz(SEA_LINE), MW, mz(BEACH_LINE) - mz(SEA_LINE));
+  mapCtx.fillStyle = '#9a7a52';
+  mapCtx.fillRect(mx(PIER.x0), mz(PIER.zEnd), mx(PIER.x1) - mx(PIER.x0), mz(PIER.zRampBot) - mz(PIER.zEnd));
+  mapCtx.fillStyle = '#4a4750';
+  for (const z of ROADS_Z) mapCtx.fillRect(0, mz(z - ROAD_HALF), MW, Math.max(1, mz(ROAD_HALF) - mz(-ROAD_HALF)));
+  for (const x of ROADS_X) mapCtx.fillRect(mx(x - ROAD_HALF), mz(BEACH_LINE), Math.max(1, mx(ROAD_HALF) - mx(-ROAD_HALF)), MH);
+  mapCtx.fillStyle = '#6b6560';
+  for (const b of blocks) if (!b.park) mapCtx.fillRect(mx(b.x0), mz(b.z0), mx(b.x1) - mx(b.x0), mz(b.z1) - mz(b.z0));
+  mapCtx.fillStyle = '#ff5964';
+  for (const c of cars) mapCtx.fillRect(mx(c.obj.position.x) - 1, mz(c.obj.position.z) - 1, 2, 2);
+  for (const tr of treats) {
+    mapCtx.fillStyle = tr.golden ? '#ffd23f' : '#f5ecd2';
+    mapCtx.fillRect(mx(tr.x) - 1, mz(tr.z) - 1, 2, 2);
+  }
+  for (const m of family) {
+    if (m.found) continue;
+    const p = m.obj.position;
+    if (Math.hypot(p.x - P.pos.x, p.z - P.pos.z) > 32) continue;
+    // a 5px heart, drawn by hand because the map is 66px across
+    const hx = Math.round(mx(p.x)), hy = Math.round(mz(p.z));
+    mapCtx.fillStyle = '#ff2b5c';
+    mapCtx.fillRect(hx - 2, hy - 2, 2, 2);
+    mapCtx.fillRect(hx + 1, hy - 2, 2, 2);
+    mapCtx.fillRect(hx - 2, hy, 5, 1);
+    mapCtx.fillRect(hx - 1, hy + 1, 3, 1);
+    mapCtx.fillRect(hx, hy + 2, 1, 1);
+  }
+  mapCtx.fillStyle = '#12101a';
+  mapCtx.fillRect(mx(P.pos.x) - 2, mz(P.pos.z) - 2, 4, 4);
+  mapCtx.fillStyle = '#ffffff';
+  mapCtx.fillRect(mx(P.pos.x) - 1 + Math.sin(P.yaw) * 2, mz(P.pos.z) - 1 + Math.cos(P.yaw) * 2, 2, 2);
+}
+
+/* ============================================================
+   18. main loop
+   ============================================================ */
+let last = performance.now(), lastWhole = 99;
+function frame(now) {
+  if (state === 'paused') {
+    last = now;
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+    return;
+  }
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
+  const t = now / 1000;
+
+  if (state === 'play') {
+    elapsed += dt;
+    if (MODE.timed) {
+      timeLeft -= dt;
+      const whole = Math.ceil(timeLeft);
+      if (whole !== lastWhole) {
+        lastWhole = whole;
+        syncHud();
+        if (whole <= 10 && whole > 0) SFX.tick();
+      }
+      if (timeLeft <= 0) { timeLeft = 0; syncHud(); endGame(); }
+    } else {
+      const whole = Math.floor(elapsed);        // free roam: the clock counts up
+      if (whole !== lastWhole) { lastWhole = whole; syncHud(); }
+    }
+    if (streak > 1 && elapsed - lastGrab > 5) { streak = 0; syncHud(); }
+    syncZoom();
+    if (elapsed > 12) el('hHint').style.opacity = '0';
+  }
+
+  const speed = updateDog(dt, t);
+  updateCars(dt, t);
+  updatePeds(dt, t);
+  updateFamily(dt, t);
+  updateGulls(dt, t);
+  updateSea(dt, t);
+  updateTreats(dt, t);
+  updateBall(dt, t);
+  updateParts(dt);
+  updateRipples(dt);
+  updateCamera(dt, speed);
+
+  mapTick += dt;
+  if (mapTick > 0.09) { mapTick = 0; drawMap(); }
+
+  renderer.render(scene, camera);
+  requestAnimationFrame(frame);
+}
+
+/* attract-mode biscuits and townsfolk so the menu isn't empty */
+while (treats.length < TREAT_TARGET) spawnTreat();
+resetFamily();
+el('castStrip').innerHTML = castStrip();
+window.addEventListener('resize', orient);
+window.addEventListener('orientationchange', orient);
+orient();
+dog.position.copy(P.pos);
+camera.position.set(SPAWN.x, 12, SPAWN.z - 16);
+el('loading').remove();
+requestAnimationFrame(frame);
+
+/* keyboard shortcut to start / restart */
+window.addEventListener('keydown', e => {
+  if (e.code === 'Escape') {
+    e.preventDefault();
+    if (state === 'play') pauseGame();
+    else if (state === 'paused') resumeGame();
+    else if (state === 'over') goMenu();
+    return;
+  }
+  if (state === 'paused') {
+    if (e.code === 'KeyM') { e.preventDefault(); goMenu(); }
+    return;
+  }
+  if (state === 'play') return;
+  if (state === 'menu' && performance.now() - stateSince > 300) {
+    if (e.code === 'Digit1') { e.preventDefault(); startGame('challenge'); return; }
+    if (e.code === 'Digit2') { e.preventDefault(); startGame('roam'); return; }
+  }
+  // Space is the jump key, so only the menu accepts it - otherwise a held jump
+  // would skip straight past the score screen
+  const go = state === 'menu' ? (e.code === 'Enter' || e.code === 'Space') : e.code === 'Enter';
+  if (go && performance.now() - stateSince > 800) { e.preventDefault(); startGame(mode); }
+});
+
+})();
+</script>
+</body>
+</html>
