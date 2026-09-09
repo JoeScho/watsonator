@@ -36,6 +36,13 @@
       radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(4,2,12,.55) 100%);
     mix-blend-mode:multiply;
   }
+  /* a phone renders a much finer game pixel than the desktop does, and a fixed
+     2px scanline then lands mid-pixel and eats small print. Ride the grid. */
+  body.touch #crust{
+    background:
+      repeating-linear-gradient(to bottom, rgba(0,0,0,.13) 0 var(--scan,2px), rgba(0,0,0,0) var(--scan,2px) calc(var(--scan,2px) * 2)),
+      radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(4,2,12,.55) 100%);
+  }
   #flash{position:fixed;inset:0;pointer-events:none;z-index:6;background:#ff2b3d;opacity:0;transition:opacity .18s}
 
   .hud{position:fixed;z-index:8;pointer-events:none;text-shadow:2px 2px 0 var(--shadow), 4px 4px 0 rgba(0,0,0,.35)}
@@ -201,7 +208,7 @@
 <div id="flash"></div>
 
 <div class="hud" id="hTime"><span id="hTimeLabel">TIME</span> <span id="timeval">90</span><div id="timebarOuter"><div id="timebar"></div></div></div>
-<div class="hud" id="hScore">SCORE <span id="scoreval">0</span><div class="best">BEST <span id="bestval">0</span></div></div>
+<div class="hud" id="hScore">SCORE <span id="scoreval">0</span><div class="best">BISCUITS <span id="treatval">22</span> LEFT</div><div class="best">BEST <span id="bestval">0</span></div></div>
 <div class="hud" id="hFam"><span id="famM">MUMMA</span><span id="famD">DADDA</span></div>
 <div class="hud" id="hStreak">x1</div>
 <div class="hud" id="hToast"></div>
@@ -283,6 +290,7 @@
   <h2 id="endTitle">TIME</h2>
   <div class="tally">
     BISCUITS <b id="endTreats">0</b><br>
+    <span id="endBonusRow" hidden>TIME BONUS <b id="endBonus">0</b><br></span>
     SCORE <b id="endScore">0</b><br>
     <span id="endFam" style="font-size:10px"></span><br>
     <span id="endBest" style="font-size:10px;opacity:.8"></span>
@@ -308,8 +316,11 @@ const TOUCH = window.matchMedia('(hover:none) and (pointer:coarse)').matches;
 if (TOUCH) document.body.classList.add('touch');
 
 const PIXEL_SCALE   = 3.4;      // bigger = chunkier
+const TOUCH_LINES   = 240;      // vertical render lines on a phone (see resize)
+const BASE_FOV      = 62;       // vertical, at 16:9
 const ROUND_SECONDS = 90;
-const TREAT_TARGET  = 22;       // live treats in the world
+const TREAT_TARGET  = 22;       // biscuits in the world, and there are no more
+const TIME_BONUS    = 20;       // points per whole second left, banked on a win
 const DOG_SCALE     = 0.55;     // a labrador is about a third of a person tall
 const LEG_LEN       = 0.975;    // hip to the underside of the paw, in model units
 const DOG_R         = 0.55;
@@ -366,13 +377,25 @@ document.getElementById('view').appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.fog = new THREE.Fog(SKY, 46, 138);
 
-const camera = new THREE.PerspectiveCamera(62, 1, 1.2, 320);
+const camera = new THREE.PerspectiveCamera(BASE_FOV, 1, 1.2, 320);
+
+/* the horizontal field of view a 16:9 window gets. Keeping THIS fixed and
+   deriving the vertical one means a wide screen sees the same width of street
+   rather than a fish-eyed extra 15 degrees with everything shrunk to match. */
+const H_FOV = 2 * Math.atan(Math.tan(BASE_FOV * Math.PI / 360) * 16 / 9);
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  const px = (TOUCH && w < 700) ? 2.4 : PIXEL_SCALE;   // else a phone renders ~114px across
+  // The buffer is divided down from CSS pixels, so what actually decides how
+  // much detail lands on a face or a tee print is the LINE COUNT, not the
+  // divisor. A desktop window gets ~235 lines; a landscape phone is only ~400
+  // CSS pixels tall, so the same divisor left it on ~115 and small print turned
+  // to mush. Target the line count on touch and let the divisor fall out.
+  const px = TOUCH ? clamp(h / TOUCH_LINES, 1, PIXEL_SCALE) : PIXEL_SCALE;
   renderer.setSize(Math.max(160, Math.floor(w / px)), Math.max(120, Math.floor(h / px)), false);
+  document.documentElement.style.setProperty('--scan', px.toFixed(2) + 'px');
   camera.aspect = w / h;
+  camera.fov = Math.min(BASE_FOV, 2 * Math.atan(Math.tan(H_FOV / 2) / camera.aspect) * 180 / Math.PI);
   camera.updateProjectionMatrix();
 }
 window.addEventListener('resize', resize);
@@ -482,29 +505,41 @@ const GLYPHS = {
   V: ['101', '101', '101', '101', '010'],
   I: ['111', '010', '010', '010', '111']
 };
-function pixText(ctx, word, x, y, px, colour) {
+/** py defaults to px. The tee stretches the letters vertically: the print is
+    boxed in by the width of JOVI, so height is the only axis left to spend, and
+    height is exactly what a five-row glyph needs to survive being minified. */
+function pixText(ctx, word, x, y, px, colour, py) {
+  py = py || px;
   ctx.fillStyle = colour;
   let cx = x;
   for (const ch of word) {
     const g = GLYPHS[ch];
     if (g) {
       for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) {
-        if (g[r][c] === '1') ctx.fillRect(cx + c * px, y + r * px, px, px);
+        if (g[r][c] === '1') ctx.fillRect(cx + c * px, y + r * py, px, py);
       }
     }
     cx += 4 * px;
   }
   return cx - x - px;
 }
-TEX.tee = pixTex(32, 32, (c, w, h) => {
+TEX.tee = pixTex(64, 64, (c, w, h) => {
   c.fillStyle = '#141418'; c.fillRect(0, 0, w, h);
-  for (let i = 0; i < 40; i++) {                         // worn cotton
+  for (let i = 0; i < 150; i++) {                        // worn cotton
     c.fillStyle = Math.random() < 0.5 ? '#1c1c22' : '#0e0e12';
     c.fillRect(rndi(0, w - 1), rndi(0, h - 1), 1, 1);
   }
-  pixText(c, 'BON', 6, 6, 2, '#f4f0e2');
-  pixText(c, 'JOVI', 2, 17, 2, '#f4f0e2');
+  pixText(c, 'BON', 10, 5, 4, '#f4f0e2', 5);             // 44 x 25, centred
+  pixText(c, 'JOVI', 2, 34, 4, '#f4f0e2', 5);            // 60 x 25, full width
 }, 1, 1);
+/* the only texture in the game with something to READ on it, so it is the only
+   one that cannot afford a mip chain: by the level the chest is down to on
+   screen, averaging has turned white-on-black lettering into flat grey. Drop
+   the chain and keep the contrast. It sparkles a little when she is half a
+   street away, which is a fair price for being able to spot her by the tee. */
+TEX.tee.minFilter = THREE.LinearFilter;
+TEX.tee.generateMipmaps = false;
+TEX.tee.needsUpdate = true;
 TEX.ball = pixTex(32, 32, (c, w, h) => {
   c.fillStyle = '#cfe04a'; c.fillRect(0, 0, w, h);
   for (let i = 0; i < 190; i++) {                      // felt
@@ -1623,6 +1658,18 @@ function spawnTreat() {
     if (crowded && i < 200) continue;
     ok = water ? Math.abs(x) > 7 : walkable(x, z);
   }
+  // The loop above gives up after 240 tries and keeps whatever it last rolled.
+  // That was harmless while biscuits respawned; now that the round ends only
+  // when every one of them has been fetched, one dropped inside a wall would
+  // strand the player forever. Open sand is walkable by construction.
+  if (!ok) {
+    water = false;
+    for (let i = 0; i < 400 && !ok; i++) {
+      x = rnd(BOUNDS.x0 + 6, BOUNDS.x1 - 6);
+      z = rnd(SEA_LINE + 4, BEACH_LINE - 3);
+      ok = walkable(x, z);
+    }
+  }
   const golden = Math.random() < 0.12;
   const obj = makeTreat(golden);
   const t = {
@@ -1836,6 +1883,11 @@ const SFX = {
     [0, 0.08, 0.16, 0.24, 0.34].forEach((d, i) => tone(392 * Math.pow(1.19, i), 0, 0.13, 'square', 0.12, d));
     woof(0.05, 240, 0.16, 0.28);
     woof(0.26, 215, 0.14, 0.24);
+  },
+  win() {                                    // longer than the reunion: this is the one
+    [0, 0.1, 0.2, 0.3, 0.42, 0.56].forEach((d, i) => tone(392 * Math.pow(1.26, i), 0, 0.18, 'square', 0.12, d));
+    woof(0.06, 250, 0.17, 0.3);
+    woof(0.5, 300, 0.2, 0.26);
   }
 };
 
@@ -1943,9 +1995,12 @@ function carAABB(c) {
 /* ============================================================
    15. game state
    ============================================================ */
+/* The two modes score on different terms - challenge banks the clock, roam has
+   no clock to bank - so a single leaderboard would only ever show the challenge
+   number. One best each, under its own key. */
 const MODES = {
-  challenge: { name: 'CHALLENGE', timed: true  },
-  roam:      { name: 'FREE ROAM', timed: false }
+  challenge: { name: 'CHALLENGE', timed: true,  bestKey: 'watsonator.best.challenge' },
+  roam:      { name: 'FREE ROAM', timed: false, bestKey: 'watsonator.best.roam' }
 };
 let mode = 'challenge';
 let MODE = MODES.challenge;
@@ -1953,11 +2008,15 @@ let MODE = MODES.challenge;
 let state = 'menu';
 let stateSince = 0;    // guards the restart key against a held jump
 let timeLeft = ROUND_SECONDS, score = 0, gathered = 0, streak = 0, lastGrab = -99, elapsed = 0;
-let best = 0;
-try { best = parseInt(localStorage.getItem('watsonator.best') || '0', 10) || 0; } catch (e) {}
+const bests = { challenge: 0, roam: 0 };
+for (const k in MODES) {
+  try { bests[k] = parseInt(localStorage.getItem(MODES[k].bestKey) || '0', 10) || 0; } catch (e) {}
+}
 
 const el = id => document.getElementById(id);
-el('bestval').textContent = best;
+/** the header shows the best for whichever mode is loaded */
+function syncBest() { el('bestval').textContent = bests[mode]; }
+syncBest();
 
 function toast(text, color) {
   const d = document.createElement('div');
@@ -2002,6 +2061,7 @@ function startGame(m) {
   el('endScreen').hidden = true;
   el('timebarOuter').hidden = !MODE.timed;
   el('hTimeLabel').textContent = MODE.timed ? 'TIME' : 'OUT FOR';
+  syncBest();
   state = 'play';
   stateSince = performance.now();
   showPad(true);
@@ -2024,29 +2084,50 @@ function goMenu() {
   audio();                      // the pause menu suspended the context
   syncHud();
 }
-function endGame() {
+/** Both halves of the job, or the round carries on: every biscuit off the
+    ground AND both of them walking home behind him. In challenge the clock is
+    still there to call it off; in free roam this is the only way a round ends. */
+function checkWin() {
+  if (state !== 'play') return;
+  if (treats.length > 0 || famFound.length < family.length) return;
+  endGame(true);
+}
+
+function endGame(won) {
   state = 'over';
   showPad(false);
   el('hZoom').hidden = true;
   stateSince = performance.now();
-  SFX.over();
-  const isBest = score > best;
+
+  // banking what is left on the clock is what makes a quick round beat a
+  // leisurely one that collected exactly the same things
+  const bonus = (won && MODE.timed) ? Math.ceil(timeLeft) * TIME_BONUS : 0;
+  if (bonus) { score += bonus; syncHud(); }   // the header should agree with the panel
+  if (won) SFX.win(); else SFX.over();
+
+  const isBest = score > bests[mode];
   if (isBest) {
-    best = score;
-    try { localStorage.setItem('watsonator.best', String(best)); } catch (e) {}
-    el('bestval').textContent = best;
+    bests[mode] = score;
+    try { localStorage.setItem(MODE.bestKey, String(score)); } catch (e) {}
   }
+  syncBest();
   const home = famFound.length === family.length;
-  el('endTitle').textContent = home ? 'HOME SAFE' : "TIME'S UP";
-  el('endFam').textContent = home
-    ? 'MUMMA AND DADDA FOUND'
-    : (famFound.length === 1
-        ? 'FOUND ' + famFound[0].name + ', LEFT THE OTHER OUT THERE'
-        : 'WATSON WENT HOME ALONE');
-  el('endFam').style.color = home ? '#7ee081' : '#ff5964';
-  el('endTreats').textContent = gathered;
+  el('endTitle').textContent = won ? 'HOME SAFE' : "TIME'S UP";
+  el('endFam').textContent = won
+    ? 'EVERY BISCUIT, AND EVERYONE HOME'
+    : (home
+        ? 'MUMMA AND DADDA FOUND, ' + treats.length + ' BISCUITS LEFT'
+        : famFound.length === 1
+          ? 'FOUND ' + famFound[0].name + ', LEFT THE OTHER OUT THERE'
+          : 'WATSON WENT HOME ALONE');
+  el('endFam').style.color = won ? '#7ee081' : home ? '#ffd23f' : '#ff5964';
+  el('endTreats').textContent = gathered + ' / ' + TREAT_TARGET;
+  el('endBonusRow').hidden = !bonus;
+  el('endBonus').textContent = '+' + bonus + '  (' + Math.ceil(timeLeft) + 's LEFT)';
   el('endScore').textContent = score;
-  el('endBest').textContent = isBest ? 'NEW BEST. GOOD BOY, WATSON.' : 'BEST ' + best;
+  el('endBest').textContent = isBest
+    ? 'NEW BEST. GOOD BOY, WATSON.'
+    : MODE.name + ' BEST ' + bests[mode];
   el('endScreen').hidden = false;
 }
 el('modeChallenge').addEventListener('click', () => { goFullscreen(); startGame('challenge'); });
@@ -2139,6 +2220,7 @@ function syncHud() {
     el('timeval').textContent = clock(elapsed);
   }
   el('scoreval').textContent = score;
+  el('treatval').textContent = treats.length;
   const s = el('hStreak');
   const mult = Math.min(streak, 6);
   if (streak > 1 && elapsed - lastGrab < 5) { s.textContent = 'x' + mult; s.style.opacity = '1'; }
@@ -2164,7 +2246,7 @@ function pauseGame() {
     (MODE.timed
       ? 'TIME LEFT <b>' + Math.ceil(Math.max(0, timeLeft)) + '</b><br>'
       : 'OUT FOR <b>' + clock(elapsed) + '</b><br>') +
-    'BISCUITS <b>' + gathered + '</b><br>' +
+    'BISCUITS <b>' + gathered + ' / ' + TREAT_TARGET + '</b><br>' +
     'SCORE <b>' + score + '</b>';
   el('pauseScreen').hidden = false;
   showPad(false);
@@ -2482,6 +2564,7 @@ function findFamily(m) {
     SFX.zoomies();
   }
   syncHud();
+  checkWin();
 }
 
 function updateFamily(dt, t) {
@@ -2672,8 +2755,9 @@ function updateTreats(dt, t) {
       P.wag = 1.6;
       if (tr.golden) { SFX.golden(); toast('GOLDEN!  +' + pts, '#ffd23f'); }
       else { SFX.collect(mult); toast('+' + pts + (mult > 1 ? '  x' + mult : ''), '#f7f2e0'); }
-      spawnTreat();
+      if (treats.length === 0) toast('THAT IS THE LOT!', '#ffd23f');
       syncHud();
+      checkWin();
     }
   }
 }
