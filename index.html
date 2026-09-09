@@ -584,13 +584,17 @@ function box(w, h, d, material, x, y, z) {
   m.position.set(x || 0, y || 0, z || 0);
   return m;
 }
-/** ground overlay (road, pavement, shadow): biased forward in depth so it never z-fights */
+/** ground overlay (road, pavement, shadow): biased forward in depth so it never z-fights.
+    Units only, never factor: factor is scaled by the polygon's depth slope, and a ground
+    plane seen at the chase camera's grazing angle has a huge one - big enough that the
+    road won the depth test against Watson's paws and ate his legs to the knee. Units are
+    a flat, view-independent nudge, which is all coplanar ground layers actually need. */
 function decal(color, map, layer) {
   return mat(color, {
     map: map,
     snap: false,
     polygonOffset: true,
-    polygonOffsetFactor: -1.5 * layer,
+    polygonOffsetFactor: 0,
     polygonOffsetUnits: -3 * layer
   });
 }
