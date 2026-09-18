@@ -368,6 +368,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="leaderboard.js"></script>
 <script src="outfits.js"></script>
+<script src="traffic.js"></script>
 <script>
 'use strict';
 (function () {
@@ -410,6 +411,7 @@ const PARK_OFF = ROAD_HALF - 1.2;
 const VROAD_Z0 = ROADS_Z[0] - ROAD_HALF;  // v-roads stop at the coast road
 const VROAD_Z1 = 78;
 const VJUNCTION = ROADS_Z[0];             // where side-street traffic joins the seafront
+const CAR_EDGE = 250;                     // cars join and leave the map here, well beyond fog
 const SPAWN = { x: 26, z: -37 };
 const WALL_GAPS = [-56, -28, 0, 28, 56];   // openings in the seafront wall
 const PIER = { x0: -4.4, x1: 4.4, zEnd: -86, zRampTop: -42, zRampBot: -36, deckY: 2.4 };
@@ -1268,29 +1270,34 @@ function makeCar(horiz) {
   g.add(box(0.2, 0.3, 1.5, new THREE.MeshBasicMaterial({ color: 0xfff0b8 }), L / 2, 0.8, 0));
   g.add(box(0.2, 0.3, 1.5, new THREE.MeshBasicMaterial({ color: 0xd8443c }), -L / 2, 0.8, 0));
   world.add(g);
+  const dir = Math.random() < 0.5 ? 1 : -1;
   const car = {
-    obj: g, horiz, len: L, wid: W,
-    dir: Math.random() < 0.5 ? 1 : -1,
-    speed: rnd(13, 20), cruise: 0, lane: 0, honk: 0,
+    obj: g, len: L, wid: W,
+    speed: rnd(13, 20), cruise: 0, honk: 0,
+    // east-west cars start anywhere along the run, including far off the map;
+    // side streets are seeded between the junctions traffic can actually reach
+    path: Traffic.make(horiz, dir,
+      pick(horiz ? ROADS_Z : ROADS_X),
+      horiz ? rnd(-CAR_EDGE, CAR_EDGE) : rnd(VJUNCTION, ROADS_Z[ROADS_Z.length - 1])),
     shadow: blob(Math.max(L, W) * 0.45)
   };
   car.cruise = car.speed;
-  if (horiz) {
-    const z = pick(ROADS_Z);
-    car.lane = z + car.dir * LANE;
-    car.p = rnd(BOUNDS.x0 - 40, BOUNDS.x1 + 40);
-    g.rotation.y = car.dir > 0 ? 0 : Math.PI;
-  } else {
-    const x = pick(ROADS_X);
-    car.lane = x - car.dir * LANE;
-    car.p = rnd(VJUNCTION, VROAD_Z1);
-    g.rotation.y = car.dir > 0 ? -Math.PI / 2 : Math.PI / 2;
-  }
-  car.shadow.scale.set(horiz ? L * 0.48 : W * 0.5, 1, horiz ? W * 0.5 : L * 0.48);
+  const at = Traffic.place(car.path);
+  g.position.set(at.x, 0, at.z);
+  g.rotation.y = at.yaw;
+  sizeCarShadow(car, at);
   return car;
 }
-for (let i = 0; i < 11; i++) cars.push(makeCar(true));
-for (let i = 0; i < 9; i++) cars.push(makeCar(false));
+/** the blob under a car, turned the way the car is - blended through a turn */
+function sizeCarShadow(c, at) {
+  const along = c.len * 0.48, across = c.wid * 0.5;
+  const h = c.path.horiz, k = at.turning;
+  c.shadow.scale.set(lerp(h ? along : across, h ? across : along, k), 1,
+                     lerp(h ? across : along, h ? along : across, k));
+}
+Traffic.configure({ roadsX: ROADS_X, roadsZ: ROADS_Z, lane: LANE, edge: CAR_EDGE, turnChance: 0.28 });
+for (let i = 0; i < 20; i++) cars.push(makeCar(true));
+for (let i = 0; i < 8; i++)  cars.push(makeCar(false));
 
 /* parked cars along the kerbs (static obstacles) */
 for (const z of ROADS_Z) {
@@ -2029,7 +2036,12 @@ function resolveObstacles(pos, r, footY) {
 }
 function carAABB(c) {
   const p = c.obj.position;
-  const hx = (c.horiz ? c.len : c.wid) / 2, hz = (c.horiz ? c.wid : c.len) / 2;
+  // halfway round a turn the car lies diagonally, so use a square big enough to
+  // hold it whichever way it is pointing rather than pretend it is still aligned
+  const turning = !!c.path.turn;
+  const big = Math.max(c.len, c.wid) / 2;
+  const hx = turning ? big : (c.path.horiz ? c.len : c.wid) / 2;
+  const hz = turning ? big : (c.path.horiz ? c.wid : c.len) / 2;
   return { x0: p.x - hx, x1: p.x + hx, z0: p.z - hz, z1: p.z + hz };
 }
 
@@ -2753,7 +2765,8 @@ function updateDog(dt, t) {
 function updateCars(dt, t) {
   for (const c of cars) {
     const p = c.obj.position;
-    const fx = c.horiz ? c.dir : 0, fz = c.horiz ? 0 : c.dir;
+    // straight ahead, whatever angle a turn has left it at
+    const fx = Math.cos(c.obj.rotation.y), fz = -Math.sin(c.obj.rotation.y);
     const gap = c.len / 2 + 4.5 + c.speed * 0.22;
     const ax = p.x + fx * gap, az = p.z + fz * gap;
     let brake = false;
@@ -2768,20 +2781,12 @@ function updateCars(dt, t) {
     }
     c.honk = Math.max(0, c.honk - dt);
     c.speed = brake ? Math.max(0, c.speed - 34 * dt) : Math.min(c.cruise, c.speed + 9 * dt);
-    c.p += c.speed * c.dir * dt;
 
-    if (c.horiz) {
-      if (c.dir > 0 && c.p > BOUNDS.x1 + 50) c.p = BOUNDS.x0 - 50;
-      if (c.dir < 0 && c.p < BOUNDS.x0 - 50) c.p = BOUNDS.x1 + 50;
-      p.set(c.p, 0, c.lane);
-    } else {
-      // recycle at the seafront junction, as if the car had turned into the
-      // side street - anywhere further south is beach, not road
-      if (c.dir > 0 && c.p > VROAD_Z1 + 24) c.p = VJUNCTION;
-      if (c.dir < 0 && c.p < VJUNCTION) c.p = VROAD_Z1 + 24;
-      p.set(c.lane, 0, c.p);
-    }
-    p.y = Math.sin(t * 9 + c.p * 0.3) * 0.03 * (c.speed / 16);
+    Traffic.advance(c.path, c.speed * dt);
+    const at = Traffic.place(c.path);
+    p.set(at.x, Math.sin(t * 9 + c.path.p * 0.3) * 0.03 * (c.speed / 16), at.z);
+    c.obj.rotation.y = at.yaw;
+    sizeCarShadow(c, at);
     c.shadow.position.set(p.x, 0.05, p.z);
 
     // squash the dog
@@ -2791,8 +2796,8 @@ function updateCars(dt, t) {
         P.stun = 1.15; P.invuln = 2.2;
         if (MODE.timed) timeLeft = Math.max(0, timeLeft - CAR_HIT_COST);
         streak = 0;
-        const kx = c.horiz ? c.dir * 6 : (P.pos.x - a.x0 < a.x1 - P.pos.x ? -12 : 12);
-        const kz = c.horiz ? (P.pos.z - a.z0 < a.z1 - P.pos.z ? -12 : 12) : c.dir * 6;
+        const kx = c.path.horiz ? c.path.dir * 6 : (P.pos.x - a.x0 < a.x1 - P.pos.x ? -12 : 12);
+        const kz = c.path.horiz ? (P.pos.z - a.z0 < a.z1 - P.pos.z ? -12 : 12) : c.path.dir * 6;
         P.vel.set(kx, 0, kz);
         P.vy = 7; P.onGround = false;
         SFX.yelp(); SFX.horn(); flash();
