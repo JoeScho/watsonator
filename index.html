@@ -407,6 +407,9 @@ const GRASS_D       = 320;      // and inland, from just behind the beach
 
 const ROADS_X = [-76, -48, -20, 8, 36, 64];
 const ROADS_Z = [-19, 5, 31, 57, 83, 109];
+/* the shopping streets: the blocks fronting these get shopfronts and stalls */
+const HIGH_STREET   = ROADS_Z[Math.floor(ROADS_Z.length / 2)];
+const HIGH_STREET_X = ROADS_X[Math.floor(ROADS_X.length / 2)];
 const ROAD_HALF = 5.6;
 const LANE = 2.0;
 const BLOCK_INSET = ROAD_HALF + 2.7;      // block edge, i.e. the back of the pavement
@@ -838,18 +841,19 @@ function makeBlocks() {
   return out;
 }
 
-function fillBlockWithBuildings(b) {
+function fillBlockWithBuildings(b, shops) {
   const w = b.x1 - b.x0, d = b.z1 - b.z0;
   const alongX = w >= d;
   const span = alongX ? w : d;
-  const n = clamp(Math.round(span / 13), 1, 5);
+  // shops are narrower and lower than housing, so a parade reads as a parade
+  const n = clamp(Math.round(span / (shops ? 9 : 13)), 1, shops ? 7 : 5);
   let cursor = 0;
   for (let i = 0; i < n; i++) {
     const seg = span / n;
     const gap = rnd(0.4, 1.6);
     const len = seg - gap;
     const depth = (alongX ? d : w) - rnd(0, 3);
-    const h = rnd(7, 24);
+    const h = shops ? rnd(7, 13) : rnd(7, 24);
     const ci = rndi(0, WALL_COLORS.length - 1);
     const bw = alongX ? len : depth, bd = alongX ? depth : len;
     const cx = alongX ? b.x0 + cursor + seg / 2 : (b.x0 + b.x1) / 2;
@@ -863,10 +867,25 @@ function fillBlockWithBuildings(b) {
     world.add(mesh);
     addObstacle(cx - bw / 2, cz - bd / 2, cx + bw / 2, cz + bd / 2, h);
     // shopfront awning on the ground floor, facing the nearest road
-    if (Math.random() < 0.55) {
+    if (shops || Math.random() < 0.55) {
       const aw = mat(pick([0xd94f4f, 0x2f7fb5, 0x3f9c5d, 0xe0a02c]));
       if (alongX) world.add(box(bw * 0.8, 0.3, 1.8, aw, cx, 3.4, cz + bd / 2 + 0.9));
       else world.add(box(1.8, 0.3, bd * 0.8, aw, cx + bw / 2 + 0.9, 3.4, cz));
+    }
+    // a glazed ground floor and a sign board over it, on the side facing the
+    // high street. Geometry rather than a new facade texture, so it reads as a
+    // shop from the road without another canvas per building.
+    if (shops) {
+      const glass = new THREE.MeshBasicMaterial({ color: 0x9fd4e6 });
+      const sign = mat(pick([0x2f4858, 0x6b2f3a, 0x2f5d3a, 0x6b4a24]));
+      const fz = Math.sign(HIGH_STREET - cz) || 1, fx = Math.sign(HIGH_STREET_X - cx) || 1;
+      if (alongX) {
+        world.add(box(bw * 0.82, 2.6, 0.25, glass, cx, 1.5, cz + fz * (bd / 2 + 0.1)));
+        world.add(box(bw * 0.86, 0.9, 0.3, sign, cx, 3.95, cz + fz * (bd / 2 + 0.15)));
+      } else {
+        world.add(box(0.25, 2.6, bd * 0.82, glass, cx + fx * (bw / 2 + 0.1), 1.5, cz));
+        world.add(box(0.3, 0.9, bd * 0.86, sign, cx + fx * (bw / 2 + 0.15), 3.95, cz));
+      }
     }
     // roof clutter
     if (Math.random() < 0.5) world.add(box(rnd(1.5, 3), rnd(1, 2.5), rnd(1.5, 3), mat(0x8b8578), cx + rnd(-bw / 4, bw / 4), h + 1, cz + rnd(-bd / 4, bd / 4)));
@@ -984,26 +1003,169 @@ function nearWallGap(x, r) {
   return false;
 }
 
+/* --- district props ------------------------------------------ */
+/** a clipped hedge, low enough to see over and solid enough to run round */
+function hedge(x0, z0, x1, z1) {
+  const a0 = Math.min(x0, x1), a1 = Math.max(x0, x1);
+  const b0 = Math.min(z0, z1), b1 = Math.max(z0, z1);
+  world.add(box(a1 - a0, 1.1, b1 - b0, mat(0x35702f), (a0 + a1) / 2, 0.55, (b0 + b1) / 2));
+  addObstacle(a0, b0, a1, b1, 1.05);
+}
+/** raised bed: soil, then whatever is flowering in it */
+function flowerBed(x, z, w, d) {
+  world.add(box(w, 0.5, d, mat(0x6b4f34), x, 0.25, z));
+  world.add(box(w - 0.5, 0.34, d - 0.5, mat(pick([0xd94f6f, 0xe0a02c, 0xc86fd9, 0xe4e0d4])), x, 0.6, z));
+  addObstacle(x - w / 2, z - d / 2, x + w / 2, z + d / 2, 0.72);
+}
+function bandstand(x, z) {
+  // sized for the town's blocks, which are only about 9 deep between pavements
+  const g = new THREE.Group();
+  g.add(box(5.4, 0.6, 5.4, mat(0xcfc6b0), 0, 0.3, 0));
+  g.add(box(4.8, 0.3, 4.8, mat(0xe2dac4), 0, 0.72, 0));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    g.add(box(0.32, 3.0, 0.32, mat(0xf0e9d6), sx * 2.0, 2.35, sz * 2.0));
+  }
+  g.add(box(6.2, 0.45, 6.2, mat(0x7a4a3a), 0, 4.05, 0));
+  g.add(box(4.0, 0.5, 4.0, mat(0x8c5a46), 0, 4.45, 0));
+  g.add(box(0.5, 0.9, 0.5, mat(0xffd23f), 0, 5.1, 0));
+  g.position.set(x, 0, z);
+  world.add(g);
+  addObstacle(x - 2.7, z - 2.7, x + 2.7, z + 2.7, 3.9);
+}
+function playground(x, z) {
+  const frameM = mat(0x2f7fb5), seatM = mat(0xe0a02c), slideM = mat(0xd94f4f);
+  const g = new THREE.Group();
+  // swing frame
+  for (const sx of [-1, 1]) {
+    const leg = box(0.3, 4.2, 0.3, frameM, sx * 2.6, 2.1, 0);
+    g.add(leg);
+  }
+  g.add(box(5.6, 0.3, 0.3, frameM, 0, 4.2, 0));
+  for (const sx of [-1, 1]) {
+    g.add(box(0.1, 1.6, 0.1, frameM, sx * 1.2, 3.2, 0));
+    g.add(box(0.9, 0.2, 0.5, seatM, sx * 1.2, 2.3, 0));
+  }
+  // a slide alongside
+  const steps = box(1.4, 2.6, 1.2, frameM, 4.4, 1.3, 0);
+  g.add(steps);
+  const ramp = box(1.2, 0.2, 4.2, slideM, 4.4, 1.9, 2.4);
+  ramp.rotation.x = 0.5;
+  g.add(ramp);
+  g.position.set(x, 0, z);
+  g.rotation.y = rnd(0, 6.28);
+  world.add(g);
+  addObstacle(x - 3.2, z - 1.2, x + 3.2, z + 1.2, 4);
+}
+/** market stall: counter, four posts and a striped canopy */
+function stall(x, z, alongX) {
+  const w = alongX ? 3.8 : 2.4, d = alongX ? 2.4 : 3.8;
+  const c = pick([0xd94f4f, 0x2f7fb5, 0x3f9c5d, 0xe0a02c, 0x8d5fa8]);
+  world.add(box(w, 0.95, d, mat(0x8b7355), x, 0.95, z));
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    world.add(box(0.16, 2.5, 0.16, mat(0x7a6a52), x + sx * (w / 2 - 0.2), 1.25, z + sz * (d / 2 - 0.2)));
+  }
+  world.add(box(w + 0.7, 0.26, d + 0.7, mat(c), x, 2.62, z));
+  world.add(box(w + 0.7, 0.3, 0.2, mat(0xf7f2e0), x, 2.4, z + (d + 0.7) / 2));
+  addObstacle(x - w / 2, z - d / 2, x + w / 2, z + d / 2, 2.4);
+}
+/** the chalkboard a shop puts out on the pavement */
+function aboard(x, z) {
+  const g = new THREE.Group();
+  const m = mat(pick([0x3a3a44, 0x5a4636]));
+  for (const sz of [-1, 1]) {
+    const leaf = box(1.3, 1.5, 0.12, m, 0, 0.78, sz * 0.24);
+    leaf.rotation.x = sz * 0.2;
+    g.add(leaf);
+  }
+  g.position.set(x, 0, z);
+  g.rotation.y = rnd(0, 6.28);
+  world.add(g);
+}
+
+/* --- the park ------------------------------------------------- */
+function fillPark(b) {
+  const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
+  const w = b.x1 - b.x0, d = b.z1 - b.z0;
+  const lw = w + PAVE_W - 3, ld = d + PAVE_W - 3;
+  world.add(ground(lw, ld, decal(0xffffff, texRep(TEX.grass, lw / 7, ld / 7), 2), cx, 0.02, cz));
+  // one path, down the long axis. A crossing pair would use up a block this
+  // shallow entirely and leave nowhere for anything to stand.
+  const alongX = w >= d;
+  if (alongX) world.add(ground(lw, 3.0, decal(0xffffff, texRep(TEX.pave, lw / 3, 1), 3), cx, 0.03, cz));
+  else        world.add(ground(3.0, ld, decal(0xffffff, texRep(TEX.pave, 1, ld / 3), 3), cx, 0.03, cz));
+
+  const clearOfPath = (x, z) => alongX ? Math.abs(z - cz) > 2.4 : Math.abs(x - cx) > 2.4;
+  if (w >= 15 && d >= 8.5) bandstand(cx, cz);
+  else if (w >= 11 && d >= 8.5) playground(cx, cz);
+
+  for (let i = 0; i < rndi(5, 10); i++) {
+    const x = rnd(b.x0 + 1.2, b.x1 - 1.2), z = rnd(b.z0 + 1.2, b.z1 - 1.2);
+    if (clearOfPath(x, z) && roomAt(x, z, 1.6)) tree(x, z, rnd(0.8, 1.2));
+  }
+  // benches sit beside the path, facing it
+  for (let i = 0; i < 4; i++) {
+    const off = (i % 2 ? 1 : -1) * 2.2;
+    const x = alongX ? rnd(b.x0 + 3, b.x1 - 3) : cx + off;
+    const z = alongX ? cz + off : rnd(b.z0 + 3, b.z1 - 3);
+    if (roomAt(x, z, 1.2)) bench(x, z, alongX ? (off > 0 ? 0 : Math.PI) : (off > 0 ? -Math.PI / 2 : Math.PI / 2));
+  }
+  for (let i = 0; i < rndi(2, 4); i++) {
+    const x = rnd(b.x0 + 2, b.x1 - 2), z = rnd(b.z0 + 1.6, b.z1 - 1.6);
+    if (clearOfPath(x, z) && roomAt(x, z, 2.4)) flowerBed(x, z, rnd(2.4, 4), rnd(1.4, 2.2));
+  }
+  // a hedge at each end, to break the square outline
+  hedge(b.x0, b.z0, b.x0 + rnd(3, 6), b.z0 + 1.0);
+  hedge(b.x1 - rnd(3, 6), b.z1 - 1.0, b.x1, b.z1);
+  b.park = true;
+}
+
 /* --- assemble the town --------------------------------------- */
 {
   const blockRects = makeBlocks();
+
+  /* The town plan, settled before a single wall goes up. The blocks either side
+     of the middle road are the high street; a few of the widest blocks well
+     away from it are parks, kept apart so the town does not end up with all its
+     green in one corner. Everything else is housing. Unlike the buildings, this
+     is not rerolled each load - a town keeps its shape. */
+  const parks = [];
   for (const b of blockRects) {
-    const park = Math.random() < 0.16 && (b.x1 - b.x0) > 12;
+    if (parks.length >= 3) break;
+    const cx = (b.x0 + b.x1) / 2, cz = (b.z0 + b.z1) / 2;
+    if (b.x1 - b.x0 < 10 || b.z1 - b.z0 < 8.5) continue;
+    if (Math.abs(cz - HIGH_STREET) < 18) continue;
+    if (parks.some(q => Math.hypot(cx - q.x, cz - q.z) < 100)) continue;
+    parks.push({ x: cx, z: cz, b });
+  }
+  const parkBlocks = new Set(parks.map(q => q.b));
+
+  for (const b of blockRects) {
+    const cz = (b.z0 + b.z1) / 2, cx = (b.x0 + b.x1) / 2;
     blocks.push(b);
-    if (park) {
-      // lawn stops short of the kerb so a strip of paving still shows
-      const lw = b.x1 - b.x0 + PAVE_W - 3, ld = b.z1 - b.z0 + PAVE_W - 3;
-      world.add(ground(lw, ld, decal(0xffffff, texRep(TEX.grass, lw / 7, ld / 7), 2), (b.x0 + b.x1) / 2, 0.02, (b.z0 + b.z1) / 2));
-      const n = rndi(3, 6);
-      for (let i = 0; i < n; i++) tree(rnd(b.x0 + 1, b.x1 - 1), rnd(b.z0 + 1, b.z1 - 1), rnd(0.8, 1.25));
-      for (let i = 0; i < 2; i++) bench(rnd(b.x0, b.x1), rnd(b.z0, b.z1), rnd(0, 6.28));
-      b.park = true;
-    } else {
-      fillBlockWithBuildings(b);
-    }
+    if (parkBlocks.has(b)) fillPark(b);
+    // a high street is a stretch, not every street in town: the blocks fronting
+    // the middle road, for a few blocks either side of the crossroads
+    else fillBlockWithBuildings(b, Math.abs(cz - HIGH_STREET) < 22 && Math.abs(cx - HIGH_STREET_X) < 50);
     // pavement ring
     const pt = texRep(TEX.pave, (b.x1 - b.x0 + PAVE_W) / 3, (b.z1 - b.z0 + PAVE_W) / 3);
     world.add(ground(b.x1 - b.x0 + PAVE_W, b.z1 - b.z0 + PAVE_W, decal(0xffffff, pt, 1), (b.x0 + b.x1) / 2, 0.01, (b.z0 + b.z1) / 2));
+  }
+
+  /* the market: stalls and chalkboards down the high street pavement, which is
+     the band between the kerb at ROAD_HALF and the block edge at BLOCK_INSET */
+  for (let x = HIGH_STREET_X - 50; x < HIGH_STREET_X + 50; x += rnd(10, 18)) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const z = HIGH_STREET + side * (ROAD_HALF + 1.9);
+    if (roomAt(x, z, 2.6)) stall(x, z, true);
+    if (Math.random() < 0.45) {
+      const ax = x + rnd(4, 7), az = HIGH_STREET + side * (ROAD_HALF + 1.3);
+      if (roomAt(ax, az, 1.1)) aboard(ax, az);
+    }
+  }
+  for (let z = HIGH_STREET - 40; z < HIGH_STREET + 40; z += rnd(12, 22)) {
+    const side = Math.random() < 0.5 ? -1 : 1;
+    const x = HIGH_STREET_X + side * (ROAD_HALF + 1.9);
+    if (roomAt(x, z, 2.6)) stall(x, z, false);
   }
 
   // Street furniture. The pavement band runs from ROAD_HALF to BLOCK_INSET out
@@ -3142,7 +3304,15 @@ function drawMap() {
   for (const z of ROADS_Z) mapCtx.fillRect(0, mz(z - ROAD_HALF), MW, Math.max(1, mz(ROAD_HALF) - mz(-ROAD_HALF)));
   for (const x of ROADS_X) mapCtx.fillRect(mx(x - ROAD_HALF), mz(BEACH_LINE), Math.max(1, mx(ROAD_HALF) - mx(-ROAD_HALF)), MH);
   mapCtx.fillStyle = '#6b6560';
-  for (const b of blocks) if (!b.park) mapCtx.fillRect(mx(b.x0), mz(b.z0), mx(b.x1) - mx(b.x0), mz(b.z1) - mz(b.z0));
+  for (const b of blocks) {
+    if (b.park) continue;
+    mapCtx.fillRect(mx(b.x0), mz(b.z0), mx(b.x1) - mx(b.x0), mz(b.z1) - mz(b.z0));
+  }
+  mapCtx.fillStyle = '#6fbf55';
+  for (const b of blocks) {
+    if (!b.park) continue;
+    mapCtx.fillRect(mx(b.x0), mz(b.z0), mx(b.x1) - mx(b.x0), mz(b.z1) - mz(b.z0));
+  }
   mapCtx.fillStyle = '#ff5964';
   for (const c of cars) mapCtx.fillRect(mx(c.obj.position.x) - 1, mz(c.obj.position.z) - 1, 2, 2);
   for (const tr of treats) {
