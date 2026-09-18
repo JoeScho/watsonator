@@ -765,7 +765,7 @@ world.add(ground(GROUND_W, BEACH_D, mat(0xffffff, { map: texRep(TEX.sand, GROUND
 world.add(ground(GROUND_W, GRASS_D, mat(0xffffff, {
   map: texRep(TEX.grass, GROUND_W / 7, GRASS_D / 7),
   polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4   // pushed back: everything wins over the base
-}), 0, -0.05, GRASS_D / 2 - 50));
+}), 0, -0.05, GRASS_D / 2 - 45));   // north edge at -45, tucked under the sand
 
 /* roads */
 for (const z of ROADS_Z) {
@@ -832,7 +832,7 @@ for (const x of ROADS_X) {
    ------------------------------------------------------------ */
 const DUNES    = { x0: -54, x1: 52, gapX: -42, gapW: 6 };   // clear of the quay, the creek and the rocks
 const HEADLAND = { cx: 84, cz: -46, rx: 26, rz: 15, h: 8.5 };
-const STACK    = { cx: 40, cz: -64, r: 10, h: 6 };
+const STACK    = { cx: 40, cz: -64, r: 10, h: 8 };   // 2 of it is spent climbing out of the seabed
 
 /** A low roll along the back of the sand. Every edge fades rather than stops:
     a hard cutoff is a vertical step in the ground, and the dog would pop up and
@@ -861,19 +861,19 @@ function stackY(x, z) {
   if (d >= 1) return 0;
   return STACK.h * Math.min(1, (1 - d) * 1.5);
 }
-function shoreY(x, z) {
-  const a = duneY(x, z), b = headlandY(x, z), c = stackY(x, z);
-  return Math.max(a, b, c);
+/** just the land: dunes, headland, stack. Drives the sand-to-turf colouring. */
+function shoreLand(x, z) {
+  return Math.max(duneY(x, z), headlandY(x, z), stackY(x, z));
 }
-/** What the shore mesh is drawn at, which is not what you stand on. Past the
-    waterline the sand carries on down as seabed so the sea covers it; it used
-    to run out flat at y=0 on top of the water, which is why the boats looked
-    like they were sitting on the beach. Blended in by height so the headland
-    and the stack still rise cleanly out of it. */
-function shoreDrawY(x, z) {
-  const h = shoreY(x, z);
-  const depth = -clamp((SEA_LINE + 1 - z) / 7, 0, 1) * 3.6;
-  return h + depth * clamp(1 - h / 1.5, 0, 1);
+/* Past the waterline the sand carries on down, so the sea covers it rather than
+   it covering the sea. The bed is the floor everywhere and land rises out of
+   it, added rather than blended - blending left a cliff round the headland
+   where the two met, and the far side of it vanished under the water. */
+function seabedY(z) {
+  return -clamp((SEA_LINE + 1 - z) / 7, 0, 1) * 2.0;
+}
+function shoreY(x, z) {
+  return shoreLand(x, z) + seabedY(z);
 }
 
 /* --- the seafront ---------------------------------------------
@@ -892,7 +892,6 @@ const boats = [];
 
 const stoneM = mat(0x9a958a), stoneM2 = mat(0x8a8479);
 const woodM  = mat(0x7a5c3a), woodM2 = mat(0x5d4630);
-const rockM  = mat(0x6f6a63), rockM2 = mat(0x585349);
 
 function bollard(x, z) {
   world.add(box(0.7, 1.0, 0.7, mat(0x3a3a42), x, 0.5, z));
@@ -938,14 +937,6 @@ function groyne(x) {
     if (z > SEA_LINE) addObstacle(x - 0.35, z - 0.4, x + 0.35, z + 0.4, h - 0.2);
   }
   world.add(box(0.3, 0.6, Math.abs(SEA_LINE - 9 - (BEACH_LINE - 2)), woodM2, x, 0.3, (BEACH_LINE - 2 + SEA_LINE - 9) / 2));
-}
-function rock(x, z, sc) {
-  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), Math.random() < 0.5 ? rockM : rockM2);
-  m.scale.set(sc * rnd(0.8, 1.4), sc * rnd(0.5, 0.9), sc * rnd(0.8, 1.4));
-  m.rotation.set(rnd(0, 3), rnd(0, 6.28), rnd(0, 3));
-  m.position.set(x, groundY(x, z) + sc * 0.25, z);
-  world.add(m);
-  addObstacle(x - sc * 0.8, z - sc * 0.8, x + sc * 0.8, z + sc * 0.8, sc * 0.8);
 }
 
 {
@@ -1025,8 +1016,10 @@ function rock(x, z, sc) {
    the flat sand with a polygon offset rather than replacing it, because the
    flat plane still has to cover the map far past where this patch stops. */
 {
-  const x0 = BOUNDS.x0 - 8, x1 = BOUNDS.x1 + 8;
-  const z0 = SEA_LINE - 22, z1 = BEACH_LINE - 0.6;
+  // wide enough for the headland, which reaches past the map edge, and deep
+  // enough for the stack, which stands well out
+  const x0 = BOUNDS.x0 - 10, x1 = BOUNDS.x1 + 16;
+  const z0 = SEA_LINE - 34, z1 = BEACH_LINE - 0.6;
   const TW = x1 - x0, TD = z1 - z0;
   const g = new THREE.PlaneGeometry(TW, TD, Math.round(TW / 2), Math.round(TD / 1.6));
   g.rotateX(-Math.PI / 2);
@@ -1036,9 +1029,8 @@ function rock(x, z, sc) {
   const sand = new THREE.Color(0xe0cfa0), turf = new THREE.Color(0x6f9f52), c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const wx = pos.getX(i) + ox, wz = pos.getZ(i) + oz;
-    const h = shoreDrawY(wx, wz);
-    pos.setY(i, h);
-    c.copy(sand).lerp(turf, clamp((shoreY(wx, wz) - 1.9) / 3.4, 0, 1));
+    pos.setY(i, shoreY(wx, wz));
+    c.copy(sand).lerp(turf, clamp((shoreLand(wx, wz) - 1.9) / 3.4, 0, 1));
     cols.push(c.r, c.g, c.b);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
@@ -1210,7 +1202,7 @@ function beachBall(x, z) {
 }
 function rock(x, z, s) {
   const r = new THREE.Mesh(new THREE.IcosahedronGeometry(s, 0), mat(0x8b8578));
-  r.position.set(x, s * 0.4, z);
+  r.position.set(x, groundY(x, z) + s * 0.4, z);   // on the dunes and headland, not through them
   r.rotation.set(rnd(0, 3), rnd(0, 3), rnd(0, 3));
   world.add(r);
   // anything you can see above the waterline you should have to go round
@@ -1405,21 +1397,26 @@ function fillPark(b) {
     world.add(ground(b.x1 - b.x0 + PAVE_W, b.z1 - b.z0 + PAVE_W, decal(0xffffff, pt, 1), (b.x0 + b.x1) / 2, 0.01, (b.z0 + b.z1) / 2));
   }
 
-  /* the market: stalls and chalkboards down the high street pavement, which is
-     the band between the kerb at ROAD_HALF and the block edge at BLOCK_INSET */
-  for (let x = HIGH_STREET_X - 50; x < HIGH_STREET_X + 50; x += rnd(10, 18)) {
+  /* The market: stalls and chalkboards down the high street pavement, the band
+     between the kerb at ROAD_HALF and the block edge at BLOCK_INSET. The
+     pavement stops dead at every junction, where the crossing road's
+     carriageway is instead, so each one has to clear the crossing roads by its
+     own half length. onRoadAt is no use for this: one pad for both axes either
+     lets a corner onto the crossing road or rejects the road it fronts. */
+  const clearOfCrossing = (v, roads, need) => roads.every(r => Math.abs(v - r) > need);
+  for (let x = HIGH_STREET_X - 50; x < HIGH_STREET_X + 50; x += rnd(7, 12)) {
     const side = Math.random() < 0.5 ? -1 : 1;
     const z = HIGH_STREET + side * STALL_OFF;
-    if (roomAt(x, z, 2.6)) stall(x, z, true);
+    if (clearOfCrossing(x, ROADS_X, ROAD_HALF + 2.4) && roomAt(x, z, 2.6)) stall(x, z, true);
     if (Math.random() < 0.45) {
-      const ax = x + rnd(4, 7), az = HIGH_STREET + side * (ROAD_HALF + 1.3);
-      if (roomAt(ax, az, 1.1)) aboard(ax, az);
+      const ax = x + rnd(4, 7), az = HIGH_STREET + side * STALL_OFF;
+      if (clearOfCrossing(ax, ROADS_X, ROAD_HALF + 1.2) && roomAt(ax, az, 1.1)) aboard(ax, az);
     }
   }
-  for (let z = HIGH_STREET - 40; z < HIGH_STREET + 40; z += rnd(12, 22)) {
+  for (let z = HIGH_STREET - 40; z < HIGH_STREET + 40; z += rnd(9, 16)) {
     const side = Math.random() < 0.5 ? -1 : 1;
     const x = HIGH_STREET_X + side * STALL_OFF;
-    if (roomAt(x, z, 2.6)) stall(x, z, false);
+    if (clearOfCrossing(z, ROADS_Z, ROAD_HALF + 2.4) && roomAt(x, z, 2.6)) stall(x, z, false);
   }
 
   // Street furniture. The pavement band runs from ROAD_HALF to BLOCK_INSET out
@@ -3016,7 +3013,9 @@ function updateDog(dt, t) {
   const onDeck = onPier(P.pos.x, P.pos.z) && P.y > 1.2;
   // The headland runs out past the waterline and the stack stands clear
   // offshore, so depth cannot be read from z alone any more.
-  const aground = groundY(P.pos.x, P.pos.z) > 0.35;
+  // shoreY, not groundY: groundY answers with the pier deck for anything in the
+  // pier's footprint, so swimming under it counted as standing on it.
+  const aground = shoreY(P.pos.x, P.pos.z) > 0.35;
   const swim = (onDeck || aground) ? 0 : clamp((WADE_Z - P.pos.z) / (WADE_Z - SWIM_Z), 0, 1);
   P.swim = swim;
   const afloat = swim > 0.75;
@@ -3526,7 +3525,7 @@ function updateCamera(dt, speed) {
      and every step off a kerb lifted it. It follows the ground under him
      instead, and slowly, so the view sits at a steady height while he bounces
      around underneath it. */
-  camFocus.y = lerp(camFocus.y, groundY(P.pos.x, P.pos.z), 1 - Math.pow(0.5, dt));
+  camFocus.y = lerp(camFocus.y, Math.max(groundY(P.pos.x, P.pos.z), 0), 1 - Math.pow(0.5, dt));
 
   const dist = state === 'menu' ? 15 : 11.4 + Math.min(speed, RUN_SPEED) * 0.14;
   const height = state === 'menu' ? 7.6 : 6.8;
