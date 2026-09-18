@@ -824,6 +824,155 @@ for (const x of ROADS_X) {
   addObstacle(-2.1, PIER.zEnd + 3.3, 2.1, PIER.zEnd + 6.7, PIER.deckY + 4, PIER.deckY);
 }
 
+/* --- the seafront ---------------------------------------------
+   The beach used to run dead straight from one side of the map to the other.
+   It now has a working harbour at the west end, a tidal creek cutting across
+   it with a boardwalk over, groynes breaking up the middle, and rocks and tide
+   pools at the east. All of it sits at ground level: the quay is a stone
+   surface rather than a raised deck, so nothing here needs groundY to grow a
+   second special case beside the pier's.
+   ------------------------------------------------------------ */
+const HARBOUR = { x0: BOUNDS.x0 + 4, x1: -60 };
+const CREEK   = { x: -42, w: 7 };
+const GROYNES = [-16, 16, 38];
+const ROCKY   = { x0: 56, x1: BOUNDS.x1 - 4 };
+const boats = [];
+
+const stoneM = mat(0x9a958a), stoneM2 = mat(0x8a8479);
+const woodM  = mat(0x7a5c3a), woodM2 = mat(0x5d4630);
+const rockM  = mat(0x6f6a63), rockM2 = mat(0x585349);
+
+function bollard(x, z) {
+  world.add(box(0.7, 1.0, 0.7, mat(0x3a3a42), x, 0.5, z));
+  world.add(box(0.95, 0.22, 0.95, mat(0x2b2b33), x, 1.05, z));
+  addObstacle(x - 0.45, z - 0.45, x + 0.45, z + 0.45, 1.1);
+}
+function crate(x, z) {
+  const h = rnd(1.1, 1.8), w = rnd(1.2, 1.9);
+  world.add(box(w, h, w, mat(pick([0x8b6f47, 0x7a5c3a, 0x9c8055])), x, h / 2, z));
+  if (Math.random() < 0.45) world.add(box(w * 0.8, h * 0.7, w * 0.8, mat(0x8b6f47), x + rnd(-0.3, 0.3), h + h * 0.35, z + rnd(-0.3, 0.3)));
+  addObstacle(x - w / 2, z - w / 2, x + w / 2, z + w / 2, h);
+}
+function barrel(x, z) {
+  world.add(box(1.0, 1.3, 1.0, mat(pick([0x3f6f4a, 0x6b3a33, 0x4a5a6b])), x, 0.65, z));
+  world.add(box(1.1, 0.16, 1.1, mat(0x2b2b33), x, 1.05, z));
+  addObstacle(x - 0.5, z - 0.5, x + 0.5, z + 0.5, 1.3);
+}
+/** a moored boat, floating on the real wave height */
+function boat(x, z, rot) {
+  const g = new THREE.Group();
+  const hull = pick([0xd8443c, 0x2f6fb0, 0xe8e3d6, 0x3f9c5d, 0xe6c341]);
+  g.add(box(3.0, 1.1, 7.0, mat(hull), 0, 0, 0));
+  g.add(box(2.4, 0.4, 5.8, mat(0x6b573c), 0, 0.5, 0));          // open deck
+  g.add(box(2.0, 1.3, 2.2, mat(0xf0e9d6), 0, 1.0, -1.4));       // wheelhouse
+  g.add(box(1.5, 0.5, 1.6, new THREE.MeshBasicMaterial({ color: 0x9fd4e6 }), 0, 1.3, -1.35));
+  g.add(box(0.22, 5.0, 0.22, mat(0xcfc6b0), 0, 3.2, 0.6));      // mast
+  g.add(box(0.14, 0.14, 1.6, mat(0xcfc6b0), 0, 5.0, 1.2));
+  g.position.set(x, SEA_Y + 0.35, z);
+  g.rotation.y = rot;
+  g.userData.ph = rnd(0, 6.28);
+  world.add(g);
+  boats.push(g);
+}
+function crane(x, z) {
+  const g = new THREE.Group();
+  g.add(box(2.6, 0.7, 2.6, mat(0x4a4750), 0, 0.35, 0));
+  g.add(box(1.1, 7.5, 1.1, mat(0xe0a02c), 0, 4.0, 0));
+  g.add(box(1.0, 0.9, 7.0, mat(0xe0a02c), 0, 7.9, -2.2));       // jib, out over the water
+  g.add(box(0.2, 3.0, 0.2, mat(0x3a3a42), 0, 6.3, -5.2));       // the hanging hook
+  g.add(box(0.7, 0.5, 0.7, mat(0x3a3a42), 0, 4.7, -5.2));
+  g.position.set(x, 0, z);
+  g.rotation.y = Math.PI;
+  world.add(g);
+  addObstacle(x - 1.4, z - 1.4, x + 1.4, z + 1.4, 8);
+}
+/** a breakwater: a row of posts marching down the sand and into the water */
+function groyne(x) {
+  for (let z = BEACH_LINE - 2; z > SEA_LINE - 9; z -= 1.9) {
+    const h = clamp(1.9 - (BEACH_LINE - 2 - z) * 0.035, 0.7, 1.9);
+    const sunk = z < SEA_LINE ? 0.5 : 0;
+    world.add(box(0.55, h, 0.7, z < SEA_LINE ? woodM2 : woodM, x + rnd(-0.12, 0.12), h / 2 - sunk, z));
+    if (z > SEA_LINE) addObstacle(x - 0.35, z - 0.4, x + 0.35, z + 0.4, h - 0.2);
+  }
+  world.add(box(0.3, 0.6, Math.abs(SEA_LINE - 9 - (BEACH_LINE - 2)), woodM2, x, 0.3, (BEACH_LINE - 2 + SEA_LINE - 9) / 2));
+}
+function rock(x, z, sc) {
+  const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), Math.random() < 0.5 ? rockM : rockM2);
+  m.scale.set(sc * rnd(0.8, 1.4), sc * rnd(0.5, 0.9), sc * rnd(0.8, 1.4));
+  m.rotation.set(rnd(0, 3), rnd(0, 6.28), rnd(0, 3));
+  m.position.set(x, sc * 0.25, z);
+  world.add(m);
+  addObstacle(x - sc * 0.8, z - sc * 0.8, x + sc * 0.8, z + sc * 0.8, sc * 0.8);
+}
+
+{
+  /* the harbour: a stone quay where the sand would be, boats moored off it */
+  const hw = HARBOUR.x1 - HARBOUR.x0, hcx = (HARBOUR.x0 + HARBOUR.x1) / 2;
+  const hd = Math.abs(BEACH_LINE - SEA_LINE) + 2;
+  world.add(ground(hw, hd, decal(0xffffff, texRep(TEX.pave, hw / 3, hd / 3), 2), hcx, 0.02, (BEACH_LINE + SEA_LINE) / 2));
+  // the quay edge, standing a little proud of the water
+  world.add(box(hw, 1.0, 1.4, stoneM, hcx, 0.35, SEA_LINE + 0.2));
+  addObstacle(HARBOUR.x0, SEA_LINE - 0.5, HARBOUR.x1, SEA_LINE + 0.9, 0.85);
+  for (let x = HARBOUR.x0 + 3; x < HARBOUR.x1 - 2; x += 6.5) bollard(x, SEA_LINE + 2.2);
+  for (let i = 0; i < 14; i++) {
+    const x = rnd(HARBOUR.x0 + 2, HARBOUR.x1 - 2), z = rnd(SEA_LINE + 4, BEACH_LINE - 2);
+    if (!roomAt(x, z, 2)) continue;
+    if (Math.random() < 0.65) crate(x, z); else barrel(x, z);
+  }
+  crane(HARBOUR.x0 + 9, SEA_LINE + 4.5);
+  // a harbour hut
+  world.add(box(6, 3.4, 5, mat(0xd9d2c0), HARBOUR.x1 - 7, 1.7, BEACH_LINE - 4));
+  world.add(box(6.6, 0.5, 5.6, mat(0x7a4a3a), HARBOUR.x1 - 7, 3.6, BEACH_LINE - 4));
+  addObstacle(HARBOUR.x1 - 10, BEACH_LINE - 6.5, HARBOUR.x1 - 4, BEACH_LINE - 1.5, 3.4);
+  for (let i = 0; i < 5; i++) {
+    boat(rnd(HARBOUR.x0 + 5, HARBOUR.x1 - 5), rnd(SEA_LINE - 16, SEA_LINE - 5), rnd(-0.35, 0.35));
+  }
+
+  /* the creek: shallow water across the sand, with a boardwalk over it. Laid
+     flat so it is something to run through rather than a wall, and placed away
+     from the openings in the promenade wall so it blocks nobody's way down. */
+  const creekM = new THREE.MeshBasicMaterial({
+    color: 0x3f87a6, transparent: true, opacity: 0.82,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -10
+  });
+  const cd = Math.abs(SEA_LINE - 1 - (BEACH_LINE + 1));
+  world.add(ground(CREEK.w, cd, creekM, CREEK.x, 0.03, (SEA_LINE - 1 + BEACH_LINE + 1) / 2));
+  for (let z = SEA_LINE; z < BEACH_LINE; z += rnd(1.6, 3)) {
+    for (const side of [-1, 1]) rock(CREEK.x + side * (CREEK.w / 2 + rnd(0.2, 1.1)), z, rnd(0.5, 0.9));
+  }
+  // the boardwalk: low enough to run straight over, railed so it reads as a bridge
+  {
+    const bz = BEACH_LINE - 2.5;
+    world.add(ground(CREEK.w + 5, 3.2, decal(0xffffff, texRep(TEX.deck, 3, 1), 4), CREEK.x, 0.06, bz));
+    for (const side of [-1, 1]) {
+      for (let x = CREEK.x - CREEK.w / 2 - 2; x <= CREEK.x + CREEK.w / 2 + 2; x += 2.2) {
+        world.add(box(0.2, 0.95, 0.2, woodM, x, 0.48, bz + side * 1.5));
+      }
+      world.add(box(CREEK.w + 5, 0.18, 0.2, woodM, CREEK.x, 0.92, bz + side * 1.5));
+      addObstacle(CREEK.x - (CREEK.w + 5) / 2, bz + side * 1.5 - 0.2, CREEK.x + (CREEK.w + 5) / 2, bz + side * 1.5 + 0.2, 0.9);
+    }
+  }
+
+  /* groynes down the middle of the beach */
+  for (const gx of GROYNES) groyne(gx);
+
+  /* the rocky end: boulders on the sand and standing out of the shallows,
+     with pools caught between them */
+  for (let i = 0; i < 26; i++) {
+    const x = rnd(ROCKY.x0, ROCKY.x1), z = rnd(SEA_LINE - 12, BEACH_LINE - 2);
+    if (z > SEA_LINE && !roomAt(x, z, 1.6)) continue;
+    rock(x, z, rnd(0.9, 2.4));
+  }
+  const poolM = new THREE.MeshBasicMaterial({
+    color: 0x4a93ab, transparent: true, opacity: 0.75,
+    polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -9
+  });
+  for (let i = 0; i < 7; i++) {
+    const x = rnd(ROCKY.x0 + 2, ROCKY.x1 - 2), z = rnd(SEA_LINE + 2, BEACH_LINE - 4);
+    world.add(ground(rnd(3, 6.5), rnd(2, 4), poolM, x, 0.03, z));
+  }
+}
+
 /* --- building blocks ----------------------------------------- */
 function makeBlocks() {
   const xe = [BOUNDS.x0 - 6].concat(ROADS_X, [BOUNDS.x1 + 6]);
@@ -3177,6 +3326,11 @@ function updateSea(dt, t) {
       arr[i + 1] = waveAt(seaBase[i], seaBase[i + 2] + SEA_Z0, t);
     }
     pos.needsUpdate = true;
+  }
+  for (const b of boats) {
+    b.position.y = SEA_Y + 0.35 + waveAt(b.position.x, b.position.z, t) * 0.8;
+    b.rotation.z = Math.sin(t * 0.9 + b.userData.ph) * 0.045;
+    b.rotation.x = Math.sin(t * 0.6 + b.userData.ph * 1.7) * 0.03;
   }
   TEX.sea.offset.y = -t * 0.02;
   TEX.sea.offset.x = Math.sin(t * 0.1) * 0.01;
