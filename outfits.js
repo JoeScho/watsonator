@@ -7,7 +7,11 @@
 
    All coordinates are Watson's own space, before DOG_SCALE. For reference:
    his body sits at y 1.55 and its top is y 2.13, the collar is at z 1.42, and
-   the head group's origin is the middle of his skull. */
+   the head group's origin is the middle of his skull.
+
+   The camera chases him from behind and above, so his chest is never in shot.
+   Anything meant to be noticed belongs on his back, his flanks, the top of his
+   head or his tail; front detail is for the moments he turns. */
 'use strict';
 (function () {
 
@@ -70,14 +74,21 @@ const OUTFITS = [
     fur: { fur: C.black, fur2: 0x22222a },
     build({ box, mat, parts }) {
       const white = mat(C.white), black = mat(C.black);
+      // His fur goes black for this one, so from behind only the white reads.
       const added = [
         box(0.8, 0.72, 0.14, white, 0, 1.5, 1.62),        // shirt front
         box(0.3, 0.16, 0.12, black, 0, 1.9, 1.95),        // bow tie, middle
         box(0.16, 0.26, 0.1, black, -0.2, 1.9, 1.95),
         box(0.16, 0.26, 0.1, black, 0.2, 1.9, 1.95),
-        box(0.62, 0.5, 0.16, black, 0, 1.44, 1.66)        // lapels sit over the shirt
+        box(0.62, 0.5, 0.16, black, 0, 1.44, 1.66),       // lapels sit over the shirt
+        box(1.74, 0.18, 0.4, white, 0, 2.18, 0.78)        // wing collar, across the shoulders
       ];
+      // the tailcoat's split, two white lines running back over the haunches
+      for (const sx of [-1, 1]) added.push(box(0.14, 0.12, 2.0, white, sx * 0.56, 2.17, -0.5));
       for (const m of added) parts.dog.add(m);
+      const tip = box(0.32, 0.32, 0.42, white, 0, 0.15, -1.12);   // white-tipped tail
+      parts.tail.add(tip);
+      added.push(tip);
       // cuffs, one per leg, so they swing with the stride
       for (const leg of parts.legs) {
         const cuff = box(0.46, 0.18, 0.5, white, 0, -0.7, 0.04);
@@ -135,13 +146,21 @@ const OUTFITS = [
     criterion: 'COLLECT 25 GOLDEN BISCUITS',
     need: 25, have: s => s.golden,
     build({ box, mat, parts }) {
-      const gold = mat(C.gold);
+      const gold = mat(C.gold), jewel = mat(C.jewel);
       const added = [
         box(1.12, 0.2, 0.94, gold, 0, 1.93, 1.44),        // the chain, over his collar
         box(0.34, 0.42, 0.14, gold, 0, 1.64, 1.86),       // a medallion, hanging
-        box(0.5, 0.16, 0.16, gold, 0, 1.72, 1.9)
+        box(0.5, 0.16, 0.16, gold, 0, 1.72, 1.9),
+        // the half he is actually seen from: chain over the shoulders, and a
+        // second medallion lying flat on his back
+        box(1.3, 0.18, 0.46, gold, 0, 2.17, 0.72),
+        box(0.66, 0.14, 0.66, gold, 0, 2.18, 0.0),
+        box(0.28, 0.17, 0.28, jewel, 0, 2.19, 0.0)
       ];
       for (const m of added) parts.dog.add(m);
+      const tip = box(0.34, 0.34, 0.38, gold, 0, 0.15, -1.1);      // gold-tipped tail
+      parts.tail.add(tip);
+      added.push(tip);
       return added;
     }
   },
@@ -192,9 +211,11 @@ const OUTFITS = [
     need: 10, have: s => s.wins,
     build({ box, mat, parts }) {
       const red = mat(C.red), gold = mat(C.gold);
-      const cape = box(1.7, 0.12, 2.5, red, 0, 2.06, -0.85);
-      cape.rotation.x = -0.12;                             // trails down over the haunches
-      const clasp = box(0.9, 0.22, 0.22, gold, 0, 2.1, 0.5);
+      // Rotating about x lifts the trailing edge when the angle is POSITIVE.
+      // It was negative, which drove the far end down through his back and tail.
+      const cape = box(1.7, 0.12, 2.5, red, 0, 2.58, -0.85);
+      cape.rotation.x = 0.28;                              // streams up and back
+      const clasp = box(0.9, 0.22, 0.22, gold, 0, 2.26, 0.55);
       const added = [cape, clasp];
       for (const m of added) parts.dog.add(m);
       return added;
@@ -227,10 +248,21 @@ const OUTFITS = [
         box(0.84, 0.12, 0.84, band, 0, 0.66, 0)
       ];
       for (const m of added) parts.head.add(m);
-      const badge = box(0.4, 0.4, 0.12, star, 0.3, 1.52, 1.62);
+      const badge = box(0.55, 0.55, 0.14, star, 0.32, 1.5, 1.63);   // still on his chest, bigger
       badge.rotation.z = 0.4;
       parts.dog.add(badge);
       added.push(badge);
+      // and a big one lying flat on his back, where it can be seen: three bars
+      // crossed at sixty degrees read as a star from above
+      for (let i = 0; i < 3; i++) {
+        const bar = box(1.0, 0.12, 0.24, star, 0, 2.19, -0.15);
+        bar.rotation.y = i * Math.PI / 3;
+        parts.dog.add(bar);
+        added.push(bar);
+      }
+      const pip = box(0.32, 0.14, 0.32, star, 0, 2.2, -0.15);
+      parts.dog.add(pip);
+      added.push(pip);
       return added;
     }
   }
