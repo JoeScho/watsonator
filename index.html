@@ -187,6 +187,9 @@
     body.touch .btn{font-size:12px;padding:12px 20px}
     body.touch .btn.small{font-size:10px;padding:9px 16px}
     body.touch .tally{font-size:10px;line-height:2}
+    body.touch .wgrid{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:7px;max-height:46vh}
+    body.touch .wtile{padding:8px 6px;gap:4px}
+    body.touch .wtile .wicon{width:34px;height:34px}
     body.touch .board{gap:7px}
     body.touch .boardlist{font-size:9px;line-height:1.9}
     body.touch .boardrow input{font-size:10px;padding:10px}
@@ -202,6 +205,26 @@
     .keys{font-size:8px;line-height:2.1}
     .btn.mode{padding:12px 16px;font-size:12px}
   }
+  /* the wardrobe: ten tiles, shadowed until they are earned */
+  .wgrid{
+    display:grid;grid-template-columns:repeat(auto-fill,minmax(116px,1fr));gap:10px;
+    width:min(640px,92vw);max-height:54vh;overflow-y:auto;padding:2px;
+  }
+  .wtile{
+    font-family:inherit;color:var(--ink);background:rgba(20,17,32,.62);border:0;
+    padding:11px 8px;cursor:pointer;box-shadow:4px 4px 0 var(--shadow);
+    display:flex;flex-direction:column;align-items:center;gap:6px;text-align:center;
+  }
+  .wtile:active{transform:translate(2px,2px);box-shadow:2px 2px 0 var(--shadow)}
+  .wtile .wicon{width:44px;height:44px;flex:none}
+  .wtile .wname{font-size:9px;color:var(--hot)}
+  .wtile .wcrit{font-size:7px;line-height:1.8;opacity:.7}
+  .wtile .wprog{font-size:7px;color:var(--good)}
+  .wtile.locked{cursor:default;background:rgba(8,7,16,.72)}
+  .wtile.locked .wname{color:rgba(247,242,224,.4)}
+  .wtile.on{background:var(--hot);color:var(--shadow);box-shadow:4px 4px 0 var(--shadow)}
+  .wtile.on .wname,.wtile.on .wcrit,.wtile.on .wprog{color:var(--shadow);opacity:1}
+  .unlocked{font-size:9px;color:var(--good);line-height:1.9;text-shadow:2px 2px 0 var(--shadow)}
   /* the leaderboard: a list on the score screen and a screen of its own */
   .board{display:flex;flex-direction:column;align-items:center;gap:10px;width:min(340px,86vw)}
   .boardsubmit{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
@@ -279,7 +302,10 @@
       <h2>FREE ROAM</h2>
     </button>
   </div>
-  <button class="btn ghost small" id="boardBtn" type="button" hidden>LEADERBOARD</button>
+  <div class="modes">
+    <button class="btn ghost small" id="boardBtn" type="button" hidden>LEADERBOARD</button>
+    <button class="btn ghost small" id="wardrobeBtn" type="button">WARDROBE</button>
+  </div>
   <div class="keys only-desk">
     <b>W A S D</b> &nbsp; walk<br>
     <b>SHIFT</b> &nbsp; run<br>
@@ -320,6 +346,7 @@
     <span id="endFam" style="font-size:10px"></span><br>
     <span id="endBest" style="font-size:10px;opacity:.8"></span>
   </div>
+  <div class="unlocked" id="endUnlocked" hidden></div>
   <div class="board" id="endBoard" hidden>
     <div class="boardsubmit" id="endSubmit" hidden>
       <label for="endName">PUT YOUR NAME ON IT</label>
@@ -335,6 +362,13 @@
   <button class="btn" id="againBtn">AGAIN</button>
   <button class="btn ghost small" id="endMenuBtn">MAIN MENU</button>
   <p class="only-desk" style="opacity:.5;font-size:9px">ENTER to go again &nbsp; ESC for the menu</p>
+</div>
+
+<div class="screen" id="wardrobeScreen" hidden>
+  <h2>WARDROBE</h2>
+  <div class="modeline" id="wardrobeCount"></div>
+  <div class="wgrid" id="wardrobeGrid"></div>
+  <button class="btn ghost small" id="wardrobeBackBtn" type="button">BACK</button>
 </div>
 
 <div class="screen" id="boardScreen" hidden>
@@ -354,6 +388,7 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script src="leaderboard.js"></script>
+<script src="outfits.js"></script>
 <script>
 'use strict';
 (function () {
@@ -1764,6 +1799,7 @@ function updateBall(dt, t) {
   ballObj.visible = false;
   heldBall.visible = true;              // his now, for the rest of the round
   score += 250;
+  bump('ballRounds');
   P.zoom = ZOOM_TIME;
   P.wag = 2.6;
   SFX.zoomies();
@@ -2008,6 +2044,7 @@ function doBark() {
   P.barkT = 0.45;
   P.wag = 1.4;
   SFX.bark();
+  bump('barks');
   for (const p of peds) {
     if (Math.hypot(p.obj.position.x - P.pos.x, p.obj.position.z - P.pos.z) < 15) p.flee = 2.2;
   }
@@ -2104,6 +2141,7 @@ function resetRound() {
   camFocus.set(P.pos.x, P.y, P.pos.z);
   camBoom = 1;
   timeLeft = ROUND_SECONDS; score = 0; gathered = 0; streak = 0; lastGrab = -99; elapsed = 0;
+  snapshotUnlocks();            // so the round can report what it earned
   lastWhole = 99;
   while (treats.length < TREAT_TARGET) spawnTreat();
   el('hHint').style.opacity = '';
@@ -2131,8 +2169,10 @@ function goMenu() {
   el('pauseScreen').hidden = true;
   el('endScreen').hidden = true;
   el('boardScreen').hidden = true;
+  el('wardrobeScreen').hidden = true;
   el('startScreen').hidden = false;
   boardOpen = false;
+  wardrobeOpen = false;
   el('hZoom').hidden = true;
   el('timebarOuter').hidden = false;
   el('hTimeLabel').textContent = 'TIME';
@@ -2169,6 +2209,15 @@ function endGame(won) {
     bests[mode] = score;
     try { localStorage.setItem(MODE.bestKey, String(score)); } catch (e) {}
   }
+  // what the round itself was worth, banked before anything is reported
+  if (won) bump('wins');
+  if (won && MODE.timed && timeLeft >= WR.T.fastWinClock) bump('fastWins');
+  if (mode === 'challenge' && score >= WR.T.crownScore) bump('crowns');
+  if (gathered >= TREAT_TARGET) bump('sweeps');
+  saveStats();
+  const fresh = newlyUnlocked();
+  el('endUnlocked').hidden = fresh.length === 0;
+  el('endUnlocked').textContent = fresh.length ? 'UNLOCKED  ' + fresh.join('   ') : '';
   syncBest();
   const home = famFound.length === family.length;
   el('endTitle').textContent = won ? 'HOME SAFE' : "TIME'S UP";
@@ -2310,6 +2359,125 @@ el('boardBtn').addEventListener('click', () => { audio(); openBoard(boardMode); 
 el('boardBackBtn').addEventListener('click', closeBoard);
 el('boardTabChallenge').addEventListener('click', () => openBoard('challenge'));
 el('boardTabRoam').addEventListener('click', () => openBoard('roam'));
+
+/* ============================================================
+   14c. the wardrobe
+   ------------------------------------------------------------
+   outfits.js says what the clothes are and what earns them. This counts, saves,
+   and puts them on. Everything sits in localStorage beside the best scores: no
+   account and no server, so the only save anyone can fiddle with is their own.
+   ============================================================ */
+const STATS_KEY = 'watsonator.stats', WORN_KEY = 'watsonator.outfit';
+const WR = window.Wardrobe;
+const stats = WR ? WR.normalise(loadJSON(STATS_KEY)) : null;
+
+function loadJSON(k) { try { return JSON.parse(localStorage.getItem(k) || 'null'); } catch (e) { return null; } }
+function saveStats() { if (stats) try { localStorage.setItem(STATS_KEY, JSON.stringify(stats)); } catch (e) {} }
+function bump(k, n) { if (stats) stats[k] += (n === undefined ? 1 : n); }
+
+/* his own coat, to go back to when an outfit comes off */
+const FUR_BASE = FUR.color.getHex(), FUR2_BASE = FUR2.color.getHex();
+let worn = null, wornMeshes = [];
+
+/** takes off whatever he had on and puts on key, or nothing for null */
+function wear(key) {
+  for (const m of wornMeshes) if (m.parent) m.parent.remove(m);
+  wornMeshes = [];
+  FUR.color.setHex(FUR_BASE);
+  FUR2.color.setHex(FUR2_BASE);
+  worn = key || null;
+  const o = worn && WR ? WR.byKey(worn) : null;
+  if (o) {
+    if (o.fur) { FUR.color.setHex(o.fur.fur); FUR2.color.setHex(o.fur.fur2); }
+    wornMeshes = o.build({
+      box: box, mat: mat,
+      parts: { dog: dog, head: dogParts.head, legs: dogParts.legs, tail: dogParts.tail }
+    }) || [];
+  }
+  try { localStorage.setItem(WORN_KEY, worn || ''); } catch (e) {}
+}
+
+/* Comparing against a snapshot taken when the round began is what lets the
+   score screen say what THIS round earned, rather than everything ever earned. */
+let unlockedAtStart = [];
+function snapshotUnlocks() { unlockedAtStart = WR ? WR.unlockedKeys(stats) : []; }
+function newlyUnlocked() {
+  if (!WR) return [];
+  return WR.unlockedKeys(stats)
+    .filter(k => unlockedAtStart.indexOf(k) < 0)
+    .map(k => WR.byKey(k).name);
+}
+
+const PLAIN_ICON =
+  '<svg viewBox="0 0 24 24" width="100%" height="100%" shape-rendering="crispEdges">' +
+  '<rect x="3" y="5" width="4" height="8" fill="#2b2b34"/>' +
+  '<rect x="17" y="5" width="4" height="8" fill="#2b2b34"/>' +
+  '<rect x="6" y="6" width="12" height="11" fill="#3b3b46"/>' +
+  '<rect x="9" y="16" width="6" height="5" fill="#2b2b34"/>' +
+  '<rect x="10" y="19" width="4" height="2" fill="#17171b"/></svg>';
+
+/** one tile. Locked, it keeps its name to itself and shows only the shadow. */
+function wardrobeTile(r, plain) {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.className = 'wtile' + (r.unlocked ? '' : ' locked') + (worn === (r.key || null) ? ' on' : '');
+  const ic = document.createElement('div');
+  ic.className = 'wicon';
+  ic.innerHTML = plain ? PLAIN_ICON : WR.icon(r.key, !r.unlocked);   // our own svg, not anyone else's
+  const nm = document.createElement('div');
+  nm.className = 'wname';
+  nm.textContent = r.unlocked ? r.name : '???';
+  const cr = document.createElement('div');
+  cr.className = 'wcrit';
+  cr.textContent = r.criterion;
+  b.append(ic, nm, cr);
+  if (!r.unlocked && r.countable) {
+    const pr = document.createElement('div');
+    pr.className = 'wprog';
+    pr.textContent = Math.min(r.have, r.need) + ' / ' + r.need + (r.unit ? ' ' + r.unit : '');
+    b.appendChild(pr);
+  }
+  if (r.unlocked) b.addEventListener('click', () => { wear(r.key || null); paintWardrobe(); });
+  else b.disabled = true;
+  return b;
+}
+
+function paintWardrobe() {
+  if (!WR) return;
+  const grid = el('wardrobeGrid');
+  grid.innerHTML = '';
+  const rows = WR.survey(stats);
+  el('wardrobeCount').textContent =
+    rows.filter(r => r.unlocked).length + ' OF ' + rows.length + ' UNLOCKED';
+  grid.appendChild(wardrobeTile(
+    { key: '', name: 'JUST WATSON', criterion: 'HIS OWN COAT', unlocked: true, countable: false }, true));
+  for (const r of rows) grid.appendChild(wardrobeTile(r, false));
+}
+
+let wardrobeOpen = false;
+function openWardrobe() {
+  paintWardrobe();
+  el('startScreen').hidden = true;
+  el('wardrobeScreen').hidden = false;
+  wardrobeOpen = true;
+}
+function closeWardrobe() {
+  el('wardrobeScreen').hidden = true;
+  el('startScreen').hidden = false;
+  wardrobeOpen = false;
+  stateSince = performance.now();   // don't let the closing key start a round
+}
+
+el('wardrobeBtn').addEventListener('click', () => { audio(); openWardrobe(); });
+el('wardrobeBackBtn').addEventListener('click', closeWardrobe);
+
+/* dress him in whatever he had on last time, if it is still his to wear */
+if (WR) {
+  let saved = '';
+  try { saved = localStorage.getItem(WORN_KEY) || ''; } catch (e) {}
+  if (saved && WR.unlockedKeys(stats).indexOf(saved) >= 0) wear(saved);
+  snapshotUnlocks();
+}
 
 /* ============================================================
    15b. touch controls
@@ -2514,6 +2682,11 @@ function updateDog(dt, t) {
   const speed = Math.hypot(P.vel.x, P.vel.z);
   if (speed > 0.6 && P.stun <= 0) P.yaw = angLerp(P.yaw, Math.atan2(P.vel.x, P.vel.z), 1 - Math.pow(0.0008, dt));
   P.dist += speed * dt;
+  if (stats) {                      // the wardrobe counts in metres, not units
+    const metres = speed * dt * WR.M_PER_UNIT;
+    stats.dist += metres;
+    if (swim > 0.5) stats.swimDist += metres;
+  }
 
   // splash in, shake off on the way out
   if (swim > 0.25 && P.wasSwim <= 0.25) {
@@ -2732,6 +2905,7 @@ function findFamily(m) {
   toast(m.name + '!  +200', '#ff9ab5');
   if (m === family[1]) guitarPose(m, 'play');
   if (famFound.length === family.length) {
+    if (elapsed <= WR.T.sheriffClock) bump('sheriffs');
     score += 500;
     toast('FAMILY REUNITED!  +500', '#ffd23f');
     SFX.zoomies();
@@ -2920,6 +3094,7 @@ function updateTreats(dt, t) {
       world.remove(tr.obj);
       treats.splice(i, 1);
       gathered++;
+      if (tr.golden) bump('golden');
       if (elapsed - lastGrab < 5) streak++; else streak = 1;
       lastGrab = elapsed;
       const mult = Math.min(streak, 6);
@@ -3107,6 +3282,7 @@ window.addEventListener('keydown', e => {
   if (e.code === 'Escape') {
     e.preventDefault();
     if (boardOpen) closeBoard();
+    else if (wardrobeOpen) closeWardrobe();
     else if (state === 'play') pauseGame();
     else if (state === 'paused') resumeGame();
     else if (state === 'over') goMenu();
@@ -3117,7 +3293,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (state === 'play') return;
-  if (boardOpen) return;            // reading the board, not waiting to start
+  if (boardOpen || wardrobeOpen) return;   // reading, not waiting to start
   if (state === 'menu' && performance.now() - stateSince > 300) {
     if (e.code === 'Digit1') { e.preventDefault(); startGame('challenge'); return; }
     if (e.code === 'Digit2') { e.preventDefault(); startGame('roam'); return; }
