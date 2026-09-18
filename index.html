@@ -865,6 +865,16 @@ function shoreY(x, z) {
   const a = duneY(x, z), b = headlandY(x, z), c = stackY(x, z);
   return Math.max(a, b, c);
 }
+/** What the shore mesh is drawn at, which is not what you stand on. Past the
+    waterline the sand carries on down as seabed so the sea covers it; it used
+    to run out flat at y=0 on top of the water, which is why the boats looked
+    like they were sitting on the beach. Blended in by height so the headland
+    and the stack still rise cleanly out of it. */
+function shoreDrawY(x, z) {
+  const h = shoreY(x, z);
+  const depth = -clamp((SEA_LINE + 1 - z) / 7, 0, 1) * 3.6;
+  return h + depth * clamp(1 - h / 1.5, 0, 1);
+}
 
 /* --- the seafront ---------------------------------------------
    The beach used to run dead straight from one side of the map to the other.
@@ -915,18 +925,9 @@ function boat(x, z, rot) {
   g.userData.ph = rnd(0, 6.28);
   world.add(g);
   boats.push(g);
-}
-function crane(x, z) {
-  const g = new THREE.Group();
-  g.add(box(2.6, 0.7, 2.6, mat(0x4a4750), 0, 0.35, 0));
-  g.add(box(1.1, 7.5, 1.1, mat(0xe0a02c), 0, 4.0, 0));
-  g.add(box(1.0, 0.9, 7.0, mat(0xe0a02c), 0, 7.9, -2.2));       // jib, out over the water
-  g.add(box(0.2, 3.0, 0.2, mat(0x3a3a42), 0, 6.3, -5.2));       // the hanging hook
-  g.add(box(0.7, 0.5, 0.7, mat(0x3a3a42), 0, 4.7, -5.2));
-  g.position.set(x, 0, z);
-  g.rotation.y = Math.PI;
-  world.add(g);
-  addObstacle(x - 1.4, z - 1.4, x + 1.4, z + 1.4, 8);
+  // solid, so you swim round a hull rather than through it. Registering it also
+  // keeps the next boat, and anything else placed later, from landing on it.
+  addObstacle(x - 1.9, z - 3.9, x + 1.9, z + 3.9, 2.4);
 }
 /** a breakwater: a row of posts marching down the sand and into the water */
 function groyne(x) {
@@ -961,13 +962,17 @@ function rock(x, z, sc) {
     if (!roomAt(x, z, 2)) continue;
     if (Math.random() < 0.65) crate(x, z); else barrel(x, z);
   }
-  crane(HARBOUR.x0 + 9, SEA_LINE + 4.5);
   // a harbour hut
   world.add(box(6, 3.4, 5, mat(0xd9d2c0), HARBOUR.x1 - 7, 1.7, BEACH_LINE - 4));
   world.add(box(6.6, 0.5, 5.6, mat(0x7a4a3a), HARBOUR.x1 - 7, 3.6, BEACH_LINE - 4));
   addObstacle(HARBOUR.x1 - 10, BEACH_LINE - 6.5, HARBOUR.x1 - 4, BEACH_LINE - 1.5, 3.4);
+  // moored in a line along the quay rather than scattered, each one checked
+  // against everything already standing so hulls do not grow out of rocks
   for (let i = 0; i < 5; i++) {
-    boat(rnd(HARBOUR.x0 + 5, HARBOUR.x1 - 5), rnd(SEA_LINE - 16, SEA_LINE - 5), rnd(-0.35, 0.35));
+    const x = HARBOUR.x0 + 7 + i * ((hw - 14) / 4) + rnd(-1.2, 1.2);
+    const z = SEA_LINE - 8 + rnd(-2.5, 2.5);
+    if (!roomAt(x, z, 4.6)) continue;
+    boat(x, z, rnd(-0.28, 0.28));
   }
 
   /* the creek: shallow water across the sand, with a boardwalk over it. Laid
@@ -1031,9 +1036,9 @@ function rock(x, z, sc) {
   const sand = new THREE.Color(0xe0cfa0), turf = new THREE.Color(0x6f9f52), c = new THREE.Color();
   for (let i = 0; i < pos.count; i++) {
     const wx = pos.getX(i) + ox, wz = pos.getZ(i) + oz;
-    const h = shoreY(wx, wz);
+    const h = shoreDrawY(wx, wz);
     pos.setY(i, h);
-    c.copy(sand).lerp(turf, clamp((h - 1.9) / 3.4, 0, 1));
+    c.copy(sand).lerp(turf, clamp((shoreY(wx, wz) - 1.9) / 3.4, 0, 1));
     cols.push(c.r, c.g, c.b);
   }
   g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
@@ -1266,54 +1271,69 @@ function bandstand(x, z) {
   world.add(g);
   addObstacle(x - 2.7, z - 2.7, x + 2.7, z + 2.7, 3.9);
 }
-function playground(x, z) {
+/* Built to fit a park block, which is about 11 by 9 between pavements. The
+   slide used to reach 4.5 out from the middle on a random bearing, which put a
+   tilted red ramp through the kerb and into the carriageway. It is shorter now,
+   and the whole thing is laid along the block rather than spun. */
+function playground(x, z, alongX) {
   const frameM = mat(0x2f7fb5), seatM = mat(0xe0a02c), slideM = mat(0xd94f4f);
   const g = new THREE.Group();
-  // swing frame
+  for (const sx of [-1, 1]) g.add(box(0.3, 4.0, 0.3, frameM, sx * 2.0, 2.0, 0));
+  g.add(box(4.4, 0.3, 0.3, frameM, 0, 4.0, 0));
   for (const sx of [-1, 1]) {
-    const leg = box(0.3, 4.2, 0.3, frameM, sx * 2.6, 2.1, 0);
-    g.add(leg);
+    g.add(box(0.1, 1.5, 0.1, frameM, sx * 0.95, 3.05, 0));
+    g.add(box(0.8, 0.2, 0.45, seatM, sx * 0.95, 2.2, 0));
   }
-  g.add(box(5.6, 0.3, 0.3, frameM, 0, 4.2, 0));
-  for (const sx of [-1, 1]) {
-    g.add(box(0.1, 1.6, 0.1, frameM, sx * 1.2, 3.2, 0));
-    g.add(box(0.9, 0.2, 0.5, seatM, sx * 1.2, 2.3, 0));
-  }
-  // a slide alongside
-  const steps = box(1.4, 2.6, 1.2, frameM, 4.4, 1.3, 0);
+  const steps = box(1.2, 2.2, 1.1, frameM, 3.3, 1.1, 0);
   g.add(steps);
-  const ramp = box(1.2, 0.2, 4.2, slideM, 4.4, 1.9, 2.4);
+  const ramp = box(1.1, 0.2, 2.8, slideM, 3.3, 1.5, 1.5);
   ramp.rotation.x = 0.5;
   g.add(ramp);
   g.position.set(x, 0, z);
-  g.rotation.y = rnd(0, 6.28);
+  g.rotation.y = alongX ? 0 : Math.PI / 2;
   world.add(g);
-  addObstacle(x - 3.2, z - 1.2, x + 3.2, z + 1.2, 4);
+  const hx = alongX ? 4.1 : 2.6, hz = alongX ? 2.6 : 4.1;
+  addObstacle(x - hx, z - hz, x + hx, z + hz, 4);
 }
 /** market stall: counter, four posts and a striped canopy */
+/* The pavement runs from the kerb at ROAD_HALF to the block edge at
+   BLOCK_INSET, a band 2.7 wide. A stall has to fit inside it across, or it
+   stands in the road at one end or in a shopfront at the other. */
+const STALL_OFF = (ROAD_HALF + BLOCK_INSET) / 2;
 function stall(x, z, alongX) {
-  const w = alongX ? 3.8 : 2.4, d = alongX ? 2.4 : 3.8;
+  const w = alongX ? 3.8 : 2.2, d = alongX ? 2.2 : 3.8;
   const c = pick([0xd94f4f, 0x2f7fb5, 0x3f9c5d, 0xe0a02c, 0x8d5fa8]);
   world.add(box(w, 0.95, d, mat(0x8b7355), x, 0.95, z));
   for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
     world.add(box(0.16, 2.5, 0.16, mat(0x7a6a52), x + sx * (w / 2 - 0.2), 1.25, z + sz * (d / 2 - 0.2)));
   }
-  world.add(box(w + 0.7, 0.26, d + 0.7, mat(c), x, 2.62, z));
-  world.add(box(w + 0.7, 0.3, 0.2, mat(0xf7f2e0), x, 2.4, z + (d + 0.7) / 2));
+  world.add(box(w + 0.4, 0.26, d + 0.4, mat(c), x, 2.62, z));
+  world.add(box(w + 0.4, 0.3, 0.2, mat(0xf7f2e0), x, 2.4, z + (d + 0.4) / 2));
   addObstacle(x - w / 2, z - d / 2, x + w / 2, z + d / 2, 2.4);
 }
-/** the chalkboard a shop puts out on the pavement */
+/** The chalkboard a shop puts out on the pavement. Both leaves hang from a
+    hinge at the top so the feet splay and the top meets - built around the
+    panels' own centres it came out as a V opening at the sky, which read as
+    nothing at all. */
 function aboard(x, z) {
   const g = new THREE.Group();
-  const m = mat(pick([0x3a3a44, 0x5a4636]));
+  const frameM = mat(pick([0x5a4636, 0x4a3b2c]));
+  const faceM = mat(0x2b2b33);
+  const chalk = mat(0xd9d2c0);
   for (const sz of [-1, 1]) {
-    const leaf = box(1.3, 1.5, 0.12, m, 0, 0.78, sz * 0.24);
-    leaf.rotation.x = sz * 0.2;
+    const leaf = new THREE.Group();
+    leaf.position.y = 1.35;
+    leaf.rotation.x = -sz * 0.24;
+    leaf.add(box(1.2, 1.35, 0.1, frameM, 0, -0.675, 0));
+    leaf.add(box(1.0, 1.08, 0.14, faceM, 0, -0.66, sz * 0.03));
+    leaf.add(box(0.72, 0.16, 0.16, chalk, 0, -0.5, sz * 0.06));   // a line of writing
+    leaf.add(box(0.52, 0.14, 0.16, chalk, 0, -0.78, sz * 0.06));
     g.add(leaf);
   }
   g.position.set(x, 0, z);
   g.rotation.y = rnd(0, 6.28);
   world.add(g);
+  addObstacle(x - 0.6, z - 0.6, x + 0.6, z + 0.6, 1.3);
 }
 
 /* --- the park ------------------------------------------------- */
@@ -1330,7 +1350,7 @@ function fillPark(b) {
 
   const clearOfPath = (x, z) => alongX ? Math.abs(z - cz) > 2.4 : Math.abs(x - cx) > 2.4;
   if (w >= 15 && d >= 8.5) bandstand(cx, cz);
-  else if (w >= 11 && d >= 8.5) playground(cx, cz);
+  else if (w >= 11 && d >= 8.5) playground(cx, cz, alongX);
 
   for (let i = 0; i < rndi(5, 10); i++) {
     const x = rnd(b.x0 + 1.2, b.x1 - 1.2), z = rnd(b.z0 + 1.2, b.z1 - 1.2);
@@ -1389,7 +1409,7 @@ function fillPark(b) {
      the band between the kerb at ROAD_HALF and the block edge at BLOCK_INSET */
   for (let x = HIGH_STREET_X - 50; x < HIGH_STREET_X + 50; x += rnd(10, 18)) {
     const side = Math.random() < 0.5 ? -1 : 1;
-    const z = HIGH_STREET + side * (ROAD_HALF + 1.9);
+    const z = HIGH_STREET + side * STALL_OFF;
     if (roomAt(x, z, 2.6)) stall(x, z, true);
     if (Math.random() < 0.45) {
       const ax = x + rnd(4, 7), az = HIGH_STREET + side * (ROAD_HALF + 1.3);
@@ -1398,7 +1418,7 @@ function fillPark(b) {
   }
   for (let z = HIGH_STREET - 40; z < HIGH_STREET + 40; z += rnd(12, 22)) {
     const side = Math.random() < 0.5 ? -1 : 1;
-    const x = HIGH_STREET_X + side * (ROAD_HALF + 1.9);
+    const x = HIGH_STREET_X + side * STALL_OFF;
     if (roomAt(x, z, 2.6)) stall(x, z, false);
   }
 
@@ -1674,7 +1694,7 @@ function makeCar(horiz) {
   const dir = Math.random() < 0.5 ? 1 : -1;
   const car = {
     obj: g, len: L, wid: W,
-    speed: rnd(13, 20), cruise: 0, honk: 0,
+    speed: rnd(13, 20), cruise: 0, honk: 0, jam: 0, ghost: 0,
     // east-west cars start anywhere along the run, including far off the map;
     // side streets are seeded between the junctions traffic can actually reach
     path: Traffic.make(horiz, dir,
@@ -3173,9 +3193,17 @@ function updateCars(dt, t) {
     const fx = Math.cos(c.obj.rotation.y), fz = -Math.sin(c.obj.rotation.y);
     const gap = c.len / 2 + 4.5 + c.speed * 0.22;
     const ax = p.x + fx * gap, az = p.z + fz * gap;
+    /* Two cars can end up each waiting on the other across a junction and stay
+       there. Rather than work out right of way, a car that has been standing
+       for three seconds stops seeing other cars for a couple of seconds and
+       drives through the knot. It still gives way to Watson. */
+    if (c.speed < 1.2) c.jam += dt; else c.jam = 0;
+    if (c.jam > 3) { c.ghost = 2.5; c.jam = 0; }
+    c.ghost = Math.max(0, c.ghost - dt);
+
     let brake = false;
     for (const o of cars) {
-      if (o === c) continue;
+      if (o === c || c.ghost > 0) continue;
       const a = carAABB(o);
       if (ax > a.x0 - 1.1 && ax < a.x1 + 1.1 && az > a.z0 - 1.1 && az < a.z1 + 1.1) { brake = true; break; }
     }
@@ -3494,7 +3522,11 @@ function updateCamera(dt, speed) {
   const fast = 1 - Math.pow(1e-7, dt);
   camFocus.x = lerp(camFocus.x, P.pos.x, fast);
   camFocus.z = lerp(camFocus.z, P.pos.z, fast);
-  camFocus.y = lerp(camFocus.y, P.y, 1 - Math.pow(0.06, dt));
+  /* The camera used to chase Watson's own height, so every jump, every dune
+     and every step off a kerb lifted it. It follows the ground under him
+     instead, and slowly, so the view sits at a steady height while he bounces
+     around underneath it. */
+  camFocus.y = lerp(camFocus.y, groundY(P.pos.x, P.pos.z), 1 - Math.pow(0.5, dt));
 
   const dist = state === 'menu' ? 15 : 11.4 + Math.min(speed, RUN_SPEED) * 0.14;
   const height = state === 'menu' ? 7.6 : 6.8;
