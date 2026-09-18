@@ -22,27 +22,7 @@
     touch-action:none;
   }
   #view{position:fixed;inset:0}
-  #view canvas{
-    display:block;width:100%;height:100%;
-    image-rendering:pixelated;
-    image-rendering:-moz-crisp-edges;
-    image-rendering:crisp-edges;
-  }
-  /* scanline + vignette crust */
-  #crust{
-    position:fixed;inset:0;pointer-events:none;z-index:5;
-    background:
-      repeating-linear-gradient(to bottom, rgba(0,0,0,.16) 0 2px, rgba(0,0,0,0) 2px 4px),
-      radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(4,2,12,.55) 100%);
-    mix-blend-mode:multiply;
-  }
-  /* a phone renders a much finer game pixel than the desktop does, and a fixed
-     2px scanline then lands mid-pixel and eats small print. Ride the grid. */
-  body.touch #crust{
-    background:
-      repeating-linear-gradient(to bottom, rgba(0,0,0,.13) 0 var(--scan,2px), rgba(0,0,0,0) var(--scan,2px) calc(var(--scan,2px) * 2)),
-      radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0) 45%, rgba(4,2,12,.55) 100%);
-  }
+  #view canvas{display:block;width:100%;height:100%}
   #flash{position:fixed;inset:0;pointer-events:none;z-index:6;background:#ff2b3d;opacity:0;transition:opacity .18s}
 
   .hud{position:fixed;z-index:8;pointer-events:none;text-shadow:2px 2px 0 var(--shadow), 4px 4px 0 rgba(0,0,0,.35)}
@@ -251,7 +231,6 @@
 </head>
 <body>
 <div id="view"></div>
-<div id="crust"></div>
 <div id="flash"></div>
 
 <div class="hud" id="hTime"><span id="hTimeLabel">TIME</span> <span id="timeval">90</span><div id="timebarOuter"><div id="timebar"></div></div></div>
@@ -401,8 +380,6 @@
 const TOUCH = window.matchMedia('(hover:none) and (pointer:coarse)').matches;
 if (TOUCH) document.body.classList.add('touch');
 
-const PIXEL_SCALE   = 2.2;      // bigger = chunkier
-const TOUCH_LINES   = 240;      // vertical render lines on a phone (see resize)
 const BASE_FOV      = 62;       // vertical, at 16:9
 const ROUND_SECONDS = 90;
 const TREAT_TARGET  = 22;       // biscuits in the world, and there are no more
@@ -472,14 +449,10 @@ const H_FOV = 2 * Math.atan(Math.tan(BASE_FOV * Math.PI / 360) * 16 / 9);
 
 function resize() {
   const w = window.innerWidth, h = window.innerHeight;
-  // The buffer is divided down from CSS pixels, so what actually decides how
-  // much detail lands on a face or a tee print is the LINE COUNT, not the
-  // divisor. A desktop window gets ~410 lines; a landscape phone is only ~400
-  // CSS pixels tall, so the same divisor left it on ~115 and small print turned
-  // to mush. Target the line count on touch and let the divisor fall out.
-  const px = TOUCH ? clamp(h / TOUCH_LINES, 1, PIXEL_SCALE) : PIXEL_SCALE;
-  renderer.setSize(Math.max(160, Math.floor(w / px)), Math.max(120, Math.floor(h / px)), false);
-  document.documentElement.style.setProperty('--scan', px.toFixed(2) + 'px');
+  // One buffer pixel per CSS pixel. The buffer used to be divided down to fake
+  // a PS1's output and then stretched back up, which is what made everything
+  // chunky; it renders at the size it is shown at now.
+  renderer.setSize(Math.max(160, w), Math.max(120, h), false);
   camera.aspect = w / h;
   camera.fov = Math.min(BASE_FOV, 2 * Math.atan(Math.tan(H_FOV / 2) / camera.aspect) * 180 / Math.PI);
   camera.updateProjectionMatrix();
@@ -492,35 +465,10 @@ const sun = new THREE.DirectionalLight(0xfff2d0, 0.55);
 sun.position.set(-40, 60, 30);
 scene.add(sun);
 
-/* ------------------------------------------------------------
-   PS1 vertex snapping: quantise clip-space so geometry wobbles
-   ------------------------------------------------------------ */
-const SNAP_PATCH = `
-  #include <project_vertex>
-  if (gl_Position.w > 0.0) {
-    float snapAmt = 260.0;
-    vec3 ndc = gl_Position.xyz / gl_Position.w;
-    ndc.xy = floor(ndc.xy * snapAmt + 0.5) / snapAmt;
-    gl_Position.xyz = ndc * gl_Position.w;
-  }
-`;
-function snapify(m) {
-  m.onBeforeCompile = sh => {
-    sh.vertexShader = sh.vertexShader.replace('#include <project_vertex>', SNAP_PATCH);
-  };
-  return m;
-}
-/** Lambert + the wobble. Pass snap:false for the huge flat planes: their corner
-    vertices sit far off-screen, so quantising them in clip space drags the
-    interpolated texture across the whole visible surface and the markings crawl. */
+/** Lambert: per-vertex lighting, which is what gives the flat, faceted look the
+    game keeps. Everything else about the PS1 treatment has gone. */
 function mat(color, opts) {
-  opts = opts || {};
-  const wobble = opts.snap !== false;
-  const o = Object.assign({}, opts);
-  delete o.snap;
-  // Lambert = per-vertex (Gouraud) lighting, exactly what the hardware did
-  const m = new THREE.MeshLambertMaterial(Object.assign({ color: color }, o));
-  return wobble ? snapify(m) : m;
+  return new THREE.MeshLambertMaterial(Object.assign({ color: color }, opts || {}));
 }
 
 /* ============================================================
@@ -532,7 +480,7 @@ function pixTex(w, h, draw, rx, ry) {
   c.width = w; c.height = h;
   draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c);
-  t.magFilter = THREE.NearestFilter;
+  t.magFilter = THREE.LinearFilter;
   t.minFilter = THREE.LinearMipMapLinearFilter;
   t.generateMipmaps = true;
   t.anisotropy = MAX_ANISO;
@@ -544,7 +492,7 @@ function pixTex(w, h, draw, rx, ry) {
 function texRep(src, rx, ry) {
   const t = src.clone();
   t.needsUpdate = true;
-  t.magFilter = THREE.NearestFilter;
+  t.magFilter = THREE.LinearFilter;
   t.minFilter = THREE.LinearMipMapLinearFilter;
   t.generateMipmaps = true;
   t.anisotropy = MAX_ANISO;
@@ -713,7 +661,6 @@ function box(w, h, d, material, x, y, z) {
 function decal(color, map, layer) {
   return mat(color, {
     map: map,
-    snap: false,
     polygonOffset: true,
     polygonOffsetFactor: 0,
     polygonOffsetUnits: -3 * layer
@@ -772,7 +719,7 @@ scene.add(world);
 /* --- sea ----------------------------------------------------- */
 const seaGeo = new THREE.PlaneGeometry(460, 300, 44, 26);
 seaGeo.rotateX(-Math.PI / 2);
-const seaMesh = new THREE.Mesh(seaGeo, mat(0xffffff, { map: TEX.sea, snap: false }));
+const seaMesh = new THREE.Mesh(seaGeo, mat(0xffffff, { map: TEX.sea }));
 seaMesh.position.set(0, -0.35, SEA_LINE - 148);
 world.add(seaMesh);
 const seaBase = Float32Array.from(seaGeo.attributes.position.array);
@@ -802,11 +749,11 @@ world.add(ground(300, 5, new THREE.MeshBasicMaterial({ color: 0xcfba86, transpar
 
 /* --- beach --------------------------------------------------- */
 const BEACH_D = Math.abs(SEA_LINE - BEACH_LINE) + 4;
-world.add(ground(300, BEACH_D, mat(0xffffff, { map: texRep(TEX.sand, 300 / 9, BEACH_D / 9), snap: false }), 0, 0, (SEA_LINE + BEACH_LINE) / 2));
+world.add(ground(300, BEACH_D, mat(0xffffff, { map: texRep(TEX.sand, 300 / 9, BEACH_D / 9) }), 0, 0, (SEA_LINE + BEACH_LINE) / 2));
 
 /* --- town ground: grass base then pavement/road on top ------- */
 world.add(ground(300, 130, mat(0xffffff, {
-  map: texRep(TEX.grass, 300 / 7, 130 / 7), snap: false,
+  map: texRep(TEX.grass, 300 / 7, 130 / 7),
   polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4   // pushed back: everything wins over the base
 }), 0, -0.05, 20));
 
