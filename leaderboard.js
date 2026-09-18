@@ -1,5 +1,8 @@
 /* WATSONATOR global leaderboard - the whole client half.
 
+   One board, the time trial. Free roam is played against nobody and posts
+   nothing, so it never comes through here.
+
    Talks to two Postgres functions through Supabase's REST endpoint with plain
    fetch. No library, no build step, nothing to deploy: see leaderboard.sql for
    the other half.
@@ -71,14 +74,15 @@ window.Board = {
     try { localStorage.setItem(NAME_KEY, n); } catch (e) {}
   },
 
-  /** the top ten for one mode, best first */
-  top(mode, limit) {
-    return rpc('top_scores', { p_mode: mode, p_limit: limit || 10 });
+  /** the top ten, best first, one row per player: names are folded without
+      case, so a player only appears once, at their best */
+  top(limit) {
+    return rpc('top_scores', { p_limit: limit || 10 });
   },
 
   /** throws with something printable if the database turns it down */
-  submit(mode, score, name) {
-    return rpc('submit_score', { p_name: name, p_mode: mode, p_score: score });
+  submit(score, name) {
+    return rpc('submit_score', { p_name: name, p_score: score });
   }
 };
 

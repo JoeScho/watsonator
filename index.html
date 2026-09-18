@@ -352,10 +352,7 @@
 
 <div class="screen" id="boardScreen" hidden>
   <h2>LEADERBOARD</h2>
-  <div class="modes">
-    <button class="btn small" id="boardTabChallenge" type="button">TIME TRIAL</button>
-    <button class="btn small ghost" id="boardTabRoam" type="button">FREE ROAM</button>
-  </div>
+  <div class="modeline">TIME TRIAL</div>
   <div class="board">
     <div class="boardmsg" id="boardMsg"></div>
     <ol class="boardlist" id="boardList"></ol>
@@ -2631,26 +2628,27 @@ el('endMenuBtn').addEventListener('click', goMenu);
    and every path through here that can fail ends as a line of text under the
    score rather than a broken screen. leaderboard.js holds the fetching; this
    holds the painting. With no Supabase project configured, none of it appears.
+
+   One board, the time trial: free roam has no clock to race against, so a roam
+   round ends with the score panel and nothing to post.
    ============================================================ */
 const BOARD = window.Board && window.Board.configured ? window.Board : null;
-let boardMode = 'challenge';   // which board the standalone screen is showing
 let boardOpen = false;
 if (BOARD) el('boardBtn').hidden = false;
 
-/** rows in, list items out. Names come from strangers, so they are set as text
-    and never as markup. */
+/** rows in, list items out. mine is the name of whoever just posted, if
+    anyone. Names come from strangers, so they are set as text and never as
+    markup. */
 function paintBoard(listEl, msgEl, rows, mine) {
   listEl.innerHTML = '';
   if (!rows || !rows.length) { msgEl.textContent = 'NOBODY HERE YET. BE THE FIRST.'; return; }
   msgEl.textContent = '';
-  let marked = false;
+  const you = mine ? mine.toLowerCase() : null;
   for (const r of rows) {
     const li = document.createElement('li');
-    // the run just posted, highlighted once - a tie shouldn't light up twice
-    if (mine && !marked && r.name === mine.name && r.score === mine.score) {
-      li.className = 'you';
-      marked = true;
-    }
+    // one row per player, so the name alone finds them: whatever case either
+    // side spelled it, and whether or not the run just posted was their best
+    if (you && r.name.toLowerCase() === you) li.className = 'you';
     const pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = r.pos + '.';
     const who = document.createElement('span'); who.className = 'who'; who.textContent = r.name;
     const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = r.score;
@@ -2659,27 +2657,29 @@ function paintBoard(listEl, msgEl, rows, mine) {
   }
 }
 
-async function loadBoard(m, listEl, msgEl, mine) {
+async function loadBoard(listEl, msgEl, mine) {
   listEl.innerHTML = '';
   msgEl.className = 'boardmsg';
   msgEl.textContent = 'LOADING...';
   try {
-    paintBoard(listEl, msgEl, await BOARD.top(m), mine);
+    paintBoard(listEl, msgEl, await BOARD.top(), mine);
   } catch (err) {
     msgEl.className = 'boardmsg bad';
     msgEl.textContent = err.message;
   }
 }
 
-/** the board under the score, with the name box when there is a score to post */
+/** the board under the score, with the name box when there is a score to post.
+    Only the time trial has a board, so a free roam round ends without one. */
 function showEndBoard() {
-  if (!BOARD) return;
+  el('endBoard').hidden = true;
+  if (!BOARD || mode !== 'challenge') return;
   el('endSubmit').hidden = score < 1;
   el('endName').value = BOARD.name();
   el('endSubmitBtn').disabled = false;
   el('endSubmitBtn').textContent = 'SUBMIT';
   el('endBoard').hidden = false;
-  loadBoard(mode, el('endBoardList'), el('endBoardMsg'), null);
+  loadBoard(el('endBoardList'), el('endBoardMsg'), null);
 }
 
 async function postScore() {
@@ -2693,16 +2693,16 @@ async function postScore() {
   }
   // the panel could in principle be restarted underneath this, so post the
   // number the player is actually looking at
-  const posted = score, posMode = mode;
+  const posted = score;
   btn.disabled = true;
   btn.textContent = 'SENDING';
   msg.className = 'boardmsg';
   msg.textContent = '';
   try {
-    await BOARD.submit(posMode, posted, name);
+    await BOARD.submit(posted, name);
     BOARD.remember(name);
     el('endSubmit').hidden = true;
-    await loadBoard(posMode, el('endBoardList'), el('endBoardMsg'), { name, score: posted });
+    await loadBoard(el('endBoardList'), el('endBoardMsg'), name);
   } catch (err) {
     btn.disabled = false;
     btn.textContent = 'SUBMIT';
@@ -2711,14 +2711,11 @@ async function postScore() {
   }
 }
 
-function openBoard(m) {
-  boardMode = m || boardMode;
-  el('boardTabChallenge').classList.toggle('ghost', boardMode !== 'challenge');
-  el('boardTabRoam').classList.toggle('ghost', boardMode !== 'roam');
+function openBoard() {
   el('startScreen').hidden = true;
   el('boardScreen').hidden = false;
   boardOpen = true;
-  loadBoard(boardMode, el('boardList'), el('boardMsg'), null);
+  loadBoard(el('boardList'), el('boardMsg'), null);
 }
 
 function closeBoard() {
@@ -2732,10 +2729,8 @@ el('endSubmitBtn').addEventListener('click', postScore);
 el('endName').addEventListener('keydown', e => {
   if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); postScore(); }
 });
-el('boardBtn').addEventListener('click', () => { audio(); openBoard(boardMode); });
+el('boardBtn').addEventListener('click', () => { audio(); openBoard(); });
 el('boardBackBtn').addEventListener('click', closeBoard);
-el('boardTabChallenge').addEventListener('click', () => openBoard('challenge'));
-el('boardTabRoam').addEventListener('click', () => openBoard('roam'));
 
 /* ============================================================
    14c. the wardrobe
