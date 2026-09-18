@@ -401,7 +401,7 @@
 const TOUCH = window.matchMedia('(hover:none) and (pointer:coarse)').matches;
 if (TOUCH) document.body.classList.add('touch');
 
-const PIXEL_SCALE   = 3.4;      // bigger = chunkier
+const PIXEL_SCALE   = 2.2;      // bigger = chunkier
 const TOUCH_LINES   = 240;      // vertical render lines on a phone (see resize)
 const BASE_FOV      = 62;       // vertical, at 16:9
 const ROUND_SECONDS = 90;
@@ -474,7 +474,7 @@ function resize() {
   const w = window.innerWidth, h = window.innerHeight;
   // The buffer is divided down from CSS pixels, so what actually decides how
   // much detail lands on a face or a tee print is the LINE COUNT, not the
-  // divisor. A desktop window gets ~235 lines; a landscape phone is only ~400
+  // divisor. A desktop window gets ~410 lines; a landscape phone is only ~400
   // CSS pixels tall, so the same divisor left it on ~115 and small print turned
   // to mush. Target the line count on touch and let the divisor fall out.
   const px = TOUCH ? clamp(h / TOUCH_LINES, 1, PIXEL_SCALE) : PIXEL_SCALE;
