@@ -824,6 +824,48 @@ for (const x of ROADS_X) {
   addObstacle(-2.1, PIER.zEnd + 3.3, 2.1, PIER.zEnd + 6.7, PIER.deckY + 4, PIER.deckY);
 }
 
+/* --- the shore is not flat ------------------------------------
+   The roads are single flat quads running the width of the map, so terrain has
+   to keep off the grid; the beach and the water are free. shoreY is the one
+   authority - groundY returns it, the visible mesh is built from it, and every
+   prop on the sand is placed by it, so what you see is what you walk on.
+   ------------------------------------------------------------ */
+const DUNES    = { x0: -54, x1: 52, gapX: -42, gapW: 6 };   // clear of the quay, the creek and the rocks
+const HEADLAND = { cx: 84, cz: -46, rx: 26, rz: 15, h: 8.5 };
+const STACK    = { cx: 40, cz: -64, r: 10, h: 6 };
+
+/** A low roll along the back of the sand. Every edge fades rather than stops:
+    a hard cutoff is a vertical step in the ground, and the dog would pop up and
+    down crossing it. */
+function duneY(x, z) {
+  const band = clamp((BEACH_LINE - 4 - z) / 6, 0, 1) * clamp((z - (SEA_LINE + 3)) / 6, 0, 1);
+  if (band <= 0) return 0;
+  const ends = clamp((x - DUNES.x0) / 8, 0, 1) * clamp((DUNES.x1 - x) / 8, 0, 1);
+  const gap  = clamp((Math.abs(x - DUNES.gapX) - DUNES.gapW) / 5, 0, 1);
+  const w = band * ends * gap;
+  if (w <= 0) return 0;
+  return Math.max(0, w * (1.4 + Math.sin(x * 0.11) * 0.75 + Math.sin(x * 0.047 + 1.7) * 0.6));
+}
+/** the grassy headland at the east end, running out into the shallows */
+function headlandY(x, z) {
+  const u = (x - HEADLAND.cx) / HEADLAND.rx, v = (z - HEADLAND.cz) / HEADLAND.rz;
+  const d = Math.hypot(u, v);
+  if (d >= 1) return 0;
+  const t = 1 - d;
+  return HEADLAND.h * t * t * (3 - 2 * t);
+}
+/** a rock stack standing offshore: flat on top, and steep, but not so steep
+    that Watson is walking up a wall to get there */
+function stackY(x, z) {
+  const d = Math.hypot(x - STACK.cx, z - STACK.cz) / STACK.r;
+  if (d >= 1) return 0;
+  return STACK.h * Math.min(1, (1 - d) * 1.5);
+}
+function shoreY(x, z) {
+  const a = duneY(x, z), b = headlandY(x, z), c = stackY(x, z);
+  return Math.max(a, b, c);
+}
+
 /* --- the seafront ---------------------------------------------
    The beach used to run dead straight from one side of the map to the other.
    It now has a working harbour at the west end, a tidal creek cutting across
@@ -891,7 +933,7 @@ function groyne(x) {
   for (let z = BEACH_LINE - 2; z > SEA_LINE - 9; z -= 1.9) {
     const h = clamp(1.9 - (BEACH_LINE - 2 - z) * 0.035, 0.7, 1.9);
     const sunk = z < SEA_LINE ? 0.5 : 0;
-    world.add(box(0.55, h, 0.7, z < SEA_LINE ? woodM2 : woodM, x + rnd(-0.12, 0.12), h / 2 - sunk, z));
+    world.add(box(0.55, h, 0.7, z < SEA_LINE ? woodM2 : woodM, x + rnd(-0.12, 0.12), groundY(x, z) + h / 2 - sunk, z));
     if (z > SEA_LINE) addObstacle(x - 0.35, z - 0.4, x + 0.35, z + 0.4, h - 0.2);
   }
   world.add(box(0.3, 0.6, Math.abs(SEA_LINE - 9 - (BEACH_LINE - 2)), woodM2, x, 0.3, (BEACH_LINE - 2 + SEA_LINE - 9) / 2));
@@ -900,7 +942,7 @@ function rock(x, z, sc) {
   const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1, 0), Math.random() < 0.5 ? rockM : rockM2);
   m.scale.set(sc * rnd(0.8, 1.4), sc * rnd(0.5, 0.9), sc * rnd(0.8, 1.4));
   m.rotation.set(rnd(0, 3), rnd(0, 6.28), rnd(0, 3));
-  m.position.set(x, sc * 0.25, z);
+  m.position.set(x, groundY(x, z) + sc * 0.25, z);
   world.add(m);
   addObstacle(x - sc * 0.8, z - sc * 0.8, x + sc * 0.8, z + sc * 0.8, sc * 0.8);
 }
@@ -970,6 +1012,49 @@ function rock(x, z, sc) {
   for (let i = 0; i < 7; i++) {
     const x = rnd(ROCKY.x0 + 2, ROCKY.x1 - 2), z = rnd(SEA_LINE + 2, BEACH_LINE - 4);
     world.add(ground(rnd(3, 6.5), rnd(2, 4), poolM, x, 0.03, z));
+  }
+}
+
+/* the shore mesh, displaced by shoreY and tinted from sand to grass with
+   height, so the headland reads as turf without a second material. Laid over
+   the flat sand with a polygon offset rather than replacing it, because the
+   flat plane still has to cover the map far past where this patch stops. */
+{
+  const x0 = BOUNDS.x0 - 8, x1 = BOUNDS.x1 + 8;
+  const z0 = SEA_LINE - 22, z1 = BEACH_LINE - 0.6;
+  const TW = x1 - x0, TD = z1 - z0;
+  const g = new THREE.PlaneGeometry(TW, TD, Math.round(TW / 2), Math.round(TD / 1.6));
+  g.rotateX(-Math.PI / 2);
+  const ox = (x0 + x1) / 2, oz = (z0 + z1) / 2;
+  const pos = g.attributes.position;
+  const cols = [];
+  const sand = new THREE.Color(0xe0cfa0), turf = new THREE.Color(0x6f9f52), c = new THREE.Color();
+  for (let i = 0; i < pos.count; i++) {
+    const wx = pos.getX(i) + ox, wz = pos.getZ(i) + oz;
+    const h = shoreY(wx, wz);
+    pos.setY(i, h);
+    c.copy(sand).lerp(turf, clamp((h - 1.9) / 3.4, 0, 1));
+    cols.push(c.r, c.g, c.b);
+  }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  g.computeVertexNormals();
+  world.add(new THREE.Mesh(g, mat(0xffffff, {
+    map: texRep(TEX.sand, TW / 9, TD / 9), vertexColors: true,
+    polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -5
+  })).translateX(ox).translateZ(oz));
+
+  // the headland's seaward face, and a bench at the top worth climbing for
+  for (let i = 0; i < 22; i++) {
+    const a = rnd(0, 6.28), r = rnd(0.55, 1.0);
+    const x = HEADLAND.cx + Math.cos(a) * HEADLAND.rx * r;
+    const z = HEADLAND.cz + Math.sin(a) * HEADLAND.rz * r;
+    if (z > BEACH_LINE - 3 || x > BOUNDS.x1 + 2) continue;
+    if (shoreY(x, z) < 1) rock(x, z, rnd(0.8, 1.9));
+  }
+  bench(HEADLAND.cx, HEADLAND.cz + 3, Math.PI);
+  for (let i = 0; i < 9; i++) {
+    const a = rnd(0, 6.28), r = rnd(0.75, 0.98);
+    rock(STACK.cx + Math.cos(a) * STACK.r * r, STACK.cz + Math.sin(a) * STACK.r * r, rnd(0.7, 1.5));
   }
 }
 
@@ -1074,7 +1159,7 @@ function palm(x, z) {
   const nut = new THREE.Mesh(new THREE.IcosahedronGeometry(0.55, 0), mat(0x7a5b32));
   crown.add(nut);
   g.add(crown);
-  g.position.set(x, 0, z);
+  g.position.set(x, groundY(x, z), z);   // palms stand on the dunes, not through them
   world.add(g);
   addObstacle(x - 0.5, z - 0.5, x + 0.5, z + 0.5, 8);
 }
@@ -1390,12 +1475,12 @@ function groundY(x, z) {
       return (PIER.deckY + 0.25) * t;
     }
   }
-  return 0;
+  return shoreY(x, z);
 }
 /** true if a treat could sit here */
 function walkable(x, z) {
   if (x < BOUNDS.x0 + 2 || x > BOUNDS.x1 - 2) return false;
-  if (z < SEA_LINE + 2 && !onPier(x, z)) return false;
+  if (z < SEA_LINE + 2 && !onPier(x, z) && shoreY(x, z) < 1.5) return false;
   if (z > BOUNDS.z1 - 2) return false;
   for (const o of obstacles) {
     if (o.y0 > 0.6) continue;
@@ -2909,7 +2994,10 @@ function updateDog(dt, t) {
   // 0 on dry sand, 1 fully afloat. Being under the pier's footprint only counts
   // as land if he is actually up at deck height - otherwise he swims underneath.
   const onDeck = onPier(P.pos.x, P.pos.z) && P.y > 1.2;
-  const swim = onDeck ? 0 : clamp((WADE_Z - P.pos.z) / (WADE_Z - SWIM_Z), 0, 1);
+  // The headland runs out past the waterline and the stack stands clear
+  // offshore, so depth cannot be read from z alone any more.
+  const aground = groundY(P.pos.x, P.pos.z) > 0.35;
+  const swim = (onDeck || aground) ? 0 : clamp((WADE_Z - P.pos.z) / (WADE_Z - SWIM_Z), 0, 1);
   P.swim = swim;
   const afloat = swim > 0.75;
   const running = (keys.ShiftLeft || keys.ShiftRight) && swim < 0.3;
