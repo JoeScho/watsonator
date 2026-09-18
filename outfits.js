@@ -23,7 +23,7 @@ const MILE = 1609;
 /* The numbers index.html has to test against at the end of a round. They live
    here so the criterion a player reads and the check that awards it cannot
    drift apart. Tuned against real play, not the theoretical maximum: a strong
-   time trial lands around 3000, nowhere near the 10870 the scoring allows. */
+   time trial lands around 3000, nowhere near the 11470 the scoring allows. */
 const T = {
   crownScore:    3000,   // in a single time trial
   fastWinClock:  20,     // seconds still on the clock at a win

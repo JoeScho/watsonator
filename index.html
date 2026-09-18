@@ -233,7 +233,7 @@
 <div id="view"></div>
 <div id="flash"></div>
 
-<div class="hud" id="hTime"><span id="hTimeLabel">TIME</span> <span id="timeval">90</span><div id="timebarOuter"><div id="timebar"></div></div></div>
+<div class="hud" id="hTime"><span id="hTimeLabel">TIME</span> <span id="timeval">120</span><div id="timebarOuter"><div id="timebar"></div></div></div>
 <div class="hud" id="hScore">SCORE <span id="scoreval">0</span><div class="best">BISCUITS <span id="treatval">22</span> LEFT</div><div class="best">BEST <span id="bestval">0</span></div></div>
 <div class="hud" id="hFam"><span id="famM">MUMMA</span><span id="famD">DADDA</span></div>
 <div class="hud" id="hStreak">x1</div>
@@ -382,7 +382,7 @@ const TOUCH = window.matchMedia('(hover:none) and (pointer:coarse)').matches;
 if (TOUCH) document.body.classList.add('touch');
 
 const BASE_FOV      = 62;       // vertical, at 16:9
-const ROUND_SECONDS = 90;
+const ROUND_SECONDS = 120;
 const TREAT_TARGET  = 22;       // biscuits in the world, and there are no more
 const TIME_BONUS    = 20;       // points per whole second left, banked on a win
 const DOG_SCALE     = 0.55;     // a labrador is about a third of a person tall
@@ -398,10 +398,15 @@ const SEA_LINE      = -46;      // beach ends / water starts
 const WADE_Z        = -43.5;    // toes wet
 const SWIM_Z        = -49;      // feet off the bottom
 const BEACH_LINE    = -30.5;    // promenade wall
-const BOUNDS        = { x0: -70, x1: 70, z0: -47, z1: 70 };
+const BOUNDS        = { x0: -100, x1: 100, z0: -47, z1: 118 };
+/* How far the flat ground, roads and sea are drawn. Fog closes at 138, so from
+   the far edge of the map a player can see 138 beyond it; the ground has to
+   reach at least that far or the world ends in mid-air. */
+const GROUND_W      = 500;      // east to west
+const GRASS_D       = 320;      // and inland, from just behind the beach
 
-const ROADS_X = [-48, -20, 8, 36];
-const ROADS_Z = [-19, 5, 31, 57];
+const ROADS_X = [-76, -48, -20, 8, 36, 64];
+const ROADS_Z = [-19, 5, 31, 57, 83, 109];
 const ROAD_HALF = 5.6;
 const LANE = 2.0;
 const BLOCK_INSET = ROAD_HALF + 2.7;      // block edge, i.e. the back of the pavement
@@ -409,11 +414,11 @@ const PAVE_W = (BLOCK_INSET - ROAD_HALF) * 2;   // paving reaches exactly to the
 const PARK_OFF = ROAD_HALF - 1.2;
 
 const VROAD_Z0 = ROADS_Z[0] - ROAD_HALF;  // v-roads stop at the coast road
-const VROAD_Z1 = 78;
+const VROAD_Z1 = 132;
 const VJUNCTION = ROADS_Z[0];             // where side-street traffic joins the seafront
-const CAR_EDGE = 250;                     // cars join and leave the map here, well beyond fog
+const CAR_EDGE = 290;                     // cars join and leave the map here, well beyond fog
 const SPAWN = { x: 26, z: -37 };
-const WALL_GAPS = [-56, -28, 0, 28, 56];   // openings in the seafront wall
+const WALL_GAPS = [-84, -56, -28, 0, 28, 56, 84];   // openings in the seafront wall
 const PIER = { x0: -4.4, x1: 4.4, zEnd: -86, zRampTop: -42, zRampBot: -36, deckY: 2.4 };
 
 /* ============================================================
@@ -719,7 +724,7 @@ scene.add(world);
 }
 
 /* --- sea ----------------------------------------------------- */
-const seaGeo = new THREE.PlaneGeometry(460, 300, 44, 26);
+const seaGeo = new THREE.PlaneGeometry(760, 300, 62, 26);
 seaGeo.rotateX(-Math.PI / 2);
 const seaMesh = new THREE.Mesh(seaGeo, mat(0xffffff, { map: TEX.sea }));
 seaMesh.position.set(0, -0.35, SEA_LINE - 148);
@@ -747,21 +752,21 @@ for (let i = 0; i < 5; i++) {
   world.add(w); waves.push(w);
 }
 /* wet sand strip */
-world.add(ground(300, 5, new THREE.MeshBasicMaterial({ color: 0xcfba86, transparent: true, opacity: 0.75, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }), 0, 0.02, SEA_LINE + 2));
+world.add(ground(GROUND_W, 5, new THREE.MeshBasicMaterial({ color: 0xcfba86, transparent: true, opacity: 0.75, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -6 }), 0, 0.02, SEA_LINE + 2));
 
 /* --- beach --------------------------------------------------- */
 const BEACH_D = Math.abs(SEA_LINE - BEACH_LINE) + 4;
-world.add(ground(300, BEACH_D, mat(0xffffff, { map: texRep(TEX.sand, 300 / 9, BEACH_D / 9) }), 0, 0, (SEA_LINE + BEACH_LINE) / 2));
+world.add(ground(GROUND_W, BEACH_D, mat(0xffffff, { map: texRep(TEX.sand, GROUND_W / 9, BEACH_D / 9) }), 0, 0, (SEA_LINE + BEACH_LINE) / 2));
 
 /* --- town ground: grass base then pavement/road on top ------- */
-world.add(ground(300, 130, mat(0xffffff, {
-  map: texRep(TEX.grass, 300 / 7, 130 / 7),
+world.add(ground(GROUND_W, GRASS_D, mat(0xffffff, {
+  map: texRep(TEX.grass, GROUND_W / 7, GRASS_D / 7),
   polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 4   // pushed back: everything wins over the base
-}), 0, -0.05, 20));
+}), 0, -0.05, GRASS_D / 2 - 50));
 
 /* roads */
 for (const z of ROADS_Z) {
-  world.add(ground(300, ROAD_HALF * 2, decal(0xffffff, texRep(TEX.roadH, 300 / 8, 1), 3), 0, 0.03, z));
+  world.add(ground(GROUND_W, ROAD_HALF * 2, decal(0xffffff, texRep(TEX.roadH, GROUND_W / 8, 1), 3), 0, 0.03, z));
 }
 const VLEN = VROAD_Z1 - VROAD_Z0;
 for (const x of ROADS_X) {
@@ -774,9 +779,9 @@ for (const x of ROADS_X) {
   // openings so you can get between the sand and the town anywhere along the front
   const GAP_W = 10;
   const segs = [];
-  let cur = -150;
+  let cur = -GROUND_W / 2;
   for (const g of WALL_GAPS) { segs.push([cur, g - GAP_W / 2]); cur = g + GAP_W / 2; }
-  segs.push([cur, 150]);
+  segs.push([cur, GROUND_W / 2]);
   for (const [a, b] of segs) {
     if (b - a < 0.6) continue;
     world.add(box(b - a, 1.7, 1.3, wallMat, (a + b) / 2, 0.55, BEACH_LINE - 0.7));
@@ -784,7 +789,7 @@ for (const x of ROADS_X) {
     world.add(box(1.1, 2.2, 1.6, postMat, a + 0.4, 0.8, BEACH_LINE - 0.7));
     world.add(box(1.1, 2.2, 1.6, postMat, b - 0.4, 0.8, BEACH_LINE - 0.7));
   }
-  world.add(ground(300, 6.8, decal(0xffffff, texRep(TEX.pave, 300 / 3, 6.8 / 3), 1), 0, 0.01, BEACH_LINE + 3.2));
+  world.add(ground(GROUND_W, 6.8, decal(0xffffff, texRep(TEX.pave, GROUND_W / 3, 6.8 / 3), 1), 0, 0.01, BEACH_LINE + 3.2));
 }
 
 /* --- the pier ------------------------------------------------ */
@@ -1296,8 +1301,8 @@ function sizeCarShadow(c, at) {
                      lerp(h ? across : along, h ? along : across, k));
 }
 Traffic.configure({ roadsX: ROADS_X, roadsZ: ROADS_Z, lane: LANE, edge: CAR_EDGE, turnChance: 0.28 });
-for (let i = 0; i < 20; i++) cars.push(makeCar(true));
-for (let i = 0; i < 8; i++)  cars.push(makeCar(false));
+for (let i = 0; i < 30; i++) cars.push(makeCar(true));
+for (let i = 0; i < 12; i++) cars.push(makeCar(false));
 
 /* parked cars along the kerbs (static obstacles) */
 for (const z of ROADS_Z) {
@@ -1428,7 +1433,7 @@ function routePoint(r, side, t) {
   if (side === 2) return [lerp(r.x1, r.x0, t), r.z1];
   return [r.x0, lerp(r.z1, r.z0, t)];
 }
-for (let i = 0; i < 18; i++) {
+for (let i = 0; i < 32; i++) {
   const p = makePerson();
   assignRoute(p);
   peds.push(p);
@@ -3121,7 +3126,8 @@ function updateCamera(dt, speed) {
    ============================================================ */
 const mapCv = el('map'), mapCtx = mapCv.getContext('2d');
 const MW = mapCv.width, MH = mapCv.height;
-const MX0 = -74, MX1 = 74, MZ0 = -106, MZ1 = 76;
+const MX0 = BOUNDS.x0 - 4, MX1 = BOUNDS.x1 + 4;
+const MZ0 = PIER.zEnd - 20, MZ1 = BOUNDS.z1 + 6;
 const mx = x => ((x - MX0) / (MX1 - MX0)) * MW;
 const mz = z => ((z - MZ0) / (MZ1 - MZ0)) * MH;
 let mapTick = 0;

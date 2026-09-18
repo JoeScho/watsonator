@@ -22,7 +22,7 @@ const HALF_PI = Math.PI / 2;
 const NET = {
   roadsX: [], roadsZ: [],
   lane: 2,
-  edge: 250,        // where cars enter and leave, far beyond fog
+  edge: 290,        // where cars enter and leave, far beyond fog
   turnChance: 0.28
 };
 

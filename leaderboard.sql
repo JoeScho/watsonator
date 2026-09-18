@@ -32,7 +32,7 @@ revoke all on public.scores from anon, authenticated;
    biscuits, each worth at most 60 (golden) times a streak multiplier capped at
    6, is 7920. The ball is 250. Mumma and Dadda are 200 each and the reunion
    bonus is 500, so 900. Challenge adds the time bonus, 20 a second against a
-   90 second clock, so 1800 more. That puts challenge at 10870 and free roam,
+   120 second clock, so 2400 more. That puts challenge at 11470 and free roam,
    which banks no clock, at 9070. Both get a little headroom for future tuning.
 
    If you change the scoring in index.html, change these to match, or a good
@@ -58,7 +58,7 @@ begin
     raise exception 'unknown mode';
   end if;
 
-  v_cap := case p_mode when 'challenge' then 11000 else 9500 end;
+  v_cap := case p_mode when 'challenge' then 12000 else 9500 end;
   if p_score is null or p_score < 1 or p_score > v_cap then
     raise exception 'that score is not possible';
   end if;
