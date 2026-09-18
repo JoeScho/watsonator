@@ -290,7 +290,7 @@
     <b>SHIFT</b> &nbsp; run<br>
     <b>SPACE</b> &nbsp; jump<br>
     <b>B</b> &nbsp; bark (scatters people)<br>
-    <b>Q</b> / <b>E</b> or drag mouse &nbsp; camera<br>
+    <b>DRAG MOUSE</b> &nbsp; camera, though it follows him on its own<br>
     <b>ESC</b> &nbsp; pause<br>
     <br>
     Pro tip! Listen for Watson's whine &mdash; it quickens as you get closer
@@ -691,6 +691,16 @@ function addObstacle(x0, z0, x1, z1, h, y0) {
     h: h || 6, y0: y0 || 0
   });
 }
+/* Things the lens must not end up inside, even where the dog is free to walk.
+   A tree is a 1.2 wide trunk holding up a canopy four times that across: the
+   dog only ever meets the trunk, but a camera down near his own height finishes
+   in the leaves with him hidden somewhere behind them. The boom reads these as
+   well as the obstacles, and ducking in lifts it over the top. */
+const sight = [];       // {x0,z0,x1,z1,h}
+function addSightBlocker(x0, z0, x1, z1, h) {
+  sight.push({ x0, z0, x1, z1, h });
+}
+
 const blocks = [];      // building block rects, reused for pedestrians + minimap
 
 /* ============================================================
@@ -1135,6 +1145,8 @@ function tree(x, z, scale) {
   g.rotation.y = rnd(0, 6.28);
   world.add(g);
   addObstacle(x - 0.6, z - 0.6, x + 0.6, z + 0.6, 4);
+  const s = scale || 1;     // the canopy: 2.4 across at the widest, 7.7 to the top
+  addSightBlocker(x - 2.4 * s, z - 2.4 * s, x + 2.4 * s, z + 2.4 * s, 7.7 * s);
 }
 function palm(x, z) {
   const g = new THREE.Group();
@@ -2376,7 +2388,7 @@ window.addEventListener('mousemove', e => {
   if (!drag.on) return;
   camYaw -= (e.clientX - drag.x) * 0.008;
   drag.x = e.clientX;
-  camYawManual = 1.6;
+  camYawManual = 0.9;      // and then it settles back in behind him
 });
 view.addEventListener('touchstart', e => {
   for (const t of e.changedTouches) {
@@ -2394,7 +2406,7 @@ view.addEventListener('touchmove', e => {
       touch.mdx = clamp((t.clientX - touch.mx) / 55, -1, 1);
       touch.mdy = clamp((t.clientY - touch.my) / 55, -1, 1);
     } else if (t.identifier === touch.camId) {
-      camYaw -= (t.clientX - touch.cx) * 0.010; touch.cx = t.clientX; camYawManual = 1.6;
+      camYaw -= (t.clientX - touch.cx) * 0.010; touch.cx = t.clientX; camYawManual = 0.9;
     }
   }
   e.preventDefault();
@@ -3503,12 +3515,17 @@ function updateCamera(dt, speed) {
   camYawManual = Math.max(0, camYawManual - dt);
   if (state === 'menu') {
     camYaw += dt * 0.14;
-  } else if (camYawManual <= 0 && speed > 2) {
-    // only swing in behind him when he is heading away from the lens. Doing it
-    // while he walks toward the camera would reverse what "back" means mid-hold.
+  } else if (camYawManual <= 0 && speed > 0.8) {
+    /* The lens sits behind whichever way he is facing, closely enough that the
+       drag is there for sightseeing rather than for playing. It holds off in
+       one case only: him running at the lens. The controls are camera relative,
+       so swinging round there would reverse the keys under the player's fingers
+       and send him spinning. Anything from side on outwards realigns, which
+       makes a held A or D a steer rather than a strafe - the camera comes round
+       with him, and the walk curves. */
     const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw);
     const away = (P.vel.x * fx + P.vel.z * fz) / speed;
-    if (away > 0.3) camYaw = angLerp(camYaw, P.yaw + Math.PI, 1 - Math.pow(0.03, dt));
+    if (away > -0.5) camYaw = angLerp(camYaw, P.yaw + Math.PI, 1 - Math.pow(0.002, dt));
   }
 
   // horizontal tracking is tight; vertical is loose so the swell and his stride
@@ -3522,8 +3539,10 @@ function updateCamera(dt, speed) {
      around underneath it. */
   camFocus.y = lerp(camFocus.y, Math.max(groundY(P.pos.x, P.pos.z), 0), 1 - Math.pow(0.5, dt));
 
+  /* Low and nearly flat, because the steeper the lens looks down the less of
+     the seafront fits under the horizon and the shorter the view ahead. */
   const dist = state === 'menu' ? 15 : 11.4 + Math.min(speed, RUN_SPEED) * 0.14;
-  const height = state === 'menu' ? 7.6 : 6.8;
+  const height = state === 'menu' ? 6.4 : 4.3;
 
   let want = 1;
   for (let k = 0; k < 10; k++) {
@@ -3537,6 +3556,10 @@ function updateCamera(dt, speed) {
       if (py > o.h + 1.0) continue;
       if (px > o.x0 - 0.9 && px < o.x1 + 0.9 && pz > o.z0 - 0.9 && pz < o.z1 + 0.9) { hit = true; break; }
     }
+    if (!hit) for (const b of sight) {
+      if (py > b.h) continue;
+      if (px > b.x0 && px < b.x1 && pz > b.z0 && pz < b.z1) { hit = true; break; }
+    }
     if (!hit) break;
   }
   // duck in quickly, come back out gently, so passing a corner does not pop
@@ -3546,9 +3569,10 @@ function updateCamera(dt, speed) {
 
   const cx = camFocus.x + Math.sin(camYaw) * dist * camBoom;
   const cz = camFocus.z + Math.cos(camYaw) * dist * camBoom;
-  const cy = Math.max(camFocus.y + height * (1 + (1 - camBoom) * 2.4), groundY(cx, cz) + 2.2);
+  const cy = Math.max(camFocus.y + height * (1 + (1 - camBoom) * 2.4), groundY(cx, cz) + 1.9);
   camera.position.set(cx, cy, cz);
-  camera.lookAt(camFocus.x, camFocus.y + 1.5, camFocus.z);
+  // aimed above his head rather than at it, which lifts the horizon up the frame
+  camera.lookAt(camFocus.x, camFocus.y + 1.9, camFocus.z);
 }
 
 /* ============================================================
