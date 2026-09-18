@@ -18,8 +18,8 @@
      ANON_KEY the anon public key - the publishable one, NOT the service role
    Leave them empty and the game runs with the leaderboard switched off.
    =========================================================================== */
-const URL      = '';
-const ANON_KEY = '';
+const URL      = 'https://wjjeatlrzuaidzvoybpt.supabase.co';
+const ANON_KEY = 'sb_publishable_D08dtBfi0UA81gbwDTQwVA_fFURWWoN';
 
 const TIMEOUT = 8000;          // a dead network shouldn't hold the score screen
 const NAME_KEY = 'watsonator.name';
