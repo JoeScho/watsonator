@@ -187,6 +187,9 @@
     body.touch .btn{font-size:12px;padding:12px 20px}
     body.touch .btn.small{font-size:10px;padding:9px 16px}
     body.touch .tally{font-size:10px;line-height:2}
+    body.touch .board{gap:7px}
+    body.touch .boardlist{font-size:9px;line-height:1.9}
+    body.touch .boardrow input{font-size:10px;padding:10px}
     body.touch .fam svg{width:48px;height:56px}
     body.touch .fam{gap:18px}
   }
@@ -199,6 +202,27 @@
     .keys{font-size:8px;line-height:2.1}
     .btn.mode{padding:12px 16px;font-size:12px}
   }
+  /* the leaderboard: a list on the score screen and a screen of its own */
+  .board{display:flex;flex-direction:column;align-items:center;gap:10px;width:min(340px,86vw)}
+  .boardsubmit{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
+  .boardsubmit label{font-size:9px;opacity:.7;text-shadow:2px 2px 0 var(--shadow)}
+  .boardrow{display:flex;gap:8px;width:100%}
+  .boardrow input{
+    flex:1 1 auto;min-width:0;font-family:inherit;font-size:11px;
+    text-transform:uppercase;color:var(--shadow);background:var(--ink);
+    border:0;padding:13px 12px;box-shadow:4px 4px 0 var(--shadow);outline:0;
+  }
+  .boardrow input::placeholder{color:rgba(18,16,26,.4)}
+  .boardrow input:focus{box-shadow:4px 4px 0 var(--shadow),0 0 0 2px var(--hot)}
+  .boardrow .btn{flex:none}
+  .boardlist{list-style:none;margin:0;padding:0;width:100%;font-size:10px;line-height:2.2}
+  .boardlist li{display:flex;gap:10px;align-items:baseline;text-shadow:2px 2px 0 var(--shadow)}
+  .boardlist .pos{flex:none;width:2.6em;text-align:right;opacity:.5}
+  .boardlist .who{flex:1 1 auto;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .boardlist .pts{flex:none;color:var(--hot)}
+  .boardlist li.you .who,.boardlist li.you .pos,.boardlist li.you .pts{color:var(--good);opacity:1}
+  .boardmsg{font-size:9px;line-height:2;opacity:.75;min-height:1.6em;text-shadow:2px 2px 0 var(--shadow)}
+  .boardmsg.bad{color:var(--bad);opacity:1}
   #loading{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:#0a0912;font-size:12px}
 </style>
 </head>
@@ -255,6 +279,7 @@
       <h2>FREE ROAM</h2>
     </button>
   </div>
+  <button class="btn ghost small" id="boardBtn" type="button" hidden>LEADERBOARD</button>
   <div class="keys only-desk">
     <b>W A S D</b> &nbsp; walk<br>
     <b>SHIFT</b> &nbsp; run<br>
@@ -295,14 +320,40 @@
     <span id="endFam" style="font-size:10px"></span><br>
     <span id="endBest" style="font-size:10px;opacity:.8"></span>
   </div>
+  <div class="board" id="endBoard" hidden>
+    <div class="boardsubmit" id="endSubmit" hidden>
+      <label for="endName">PUT YOUR NAME ON IT</label>
+      <div class="boardrow">
+        <input id="endName" type="text" maxlength="16" placeholder="YOUR NAME"
+               autocomplete="off" autocapitalize="characters" autocorrect="off" spellcheck="false">
+        <button class="btn small" id="endSubmitBtn" type="button">SUBMIT</button>
+      </div>
+    </div>
+    <div class="boardmsg" id="endBoardMsg"></div>
+    <ol class="boardlist" id="endBoardList"></ol>
+  </div>
   <button class="btn" id="againBtn">AGAIN</button>
   <button class="btn ghost small" id="endMenuBtn">MAIN MENU</button>
   <p class="only-desk" style="opacity:.5;font-size:9px">ENTER to go again &nbsp; ESC for the menu</p>
 </div>
 
+<div class="screen" id="boardScreen" hidden>
+  <h2>LEADERBOARD</h2>
+  <div class="modes">
+    <button class="btn small" id="boardTabChallenge" type="button">TIME TRIAL</button>
+    <button class="btn small ghost" id="boardTabRoam" type="button">FREE ROAM</button>
+  </div>
+  <div class="board">
+    <div class="boardmsg" id="boardMsg"></div>
+    <ol class="boardlist" id="boardList"></ol>
+  </div>
+  <button class="btn ghost small" id="boardBackBtn" type="button">BACK</button>
+</div>
+
 <div id="loading">LOADING...</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="leaderboard.js"></script>
 <script>
 'use strict';
 (function () {
@@ -1895,7 +1946,13 @@ const SFX = {
    13. input
    ============================================================ */
 const keys = {};
+/** true while a text box has the keyboard, so the game keeps its hands off it */
+function typing(e) {
+  const t = e.target;
+  return !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable);
+}
 window.addEventListener('keydown', e => {
+  if (typing(e)) return;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) e.preventDefault();
   keys[e.code] = true;
   if (e.code === 'KeyB') doBark();
@@ -2073,7 +2130,9 @@ function goMenu() {
   resetRound();
   el('pauseScreen').hidden = true;
   el('endScreen').hidden = true;
+  el('boardScreen').hidden = true;
   el('startScreen').hidden = false;
+  boardOpen = false;
   el('hZoom').hidden = true;
   el('timebarOuter').hidden = false;
   el('hTimeLabel').textContent = 'TIME';
@@ -2129,6 +2188,7 @@ function endGame(won) {
     ? 'NEW BEST. GOOD BOY, WATSON.'
     : MODE.name + ' BEST ' + bests[mode];
   el('endScreen').hidden = false;
+  showEndBoard();
 }
 el('modeChallenge').addEventListener('click', () => { goFullscreen(); startGame('challenge'); });
 el('modeRoam').addEventListener('click', () => { goFullscreen(); startGame('roam'); });
@@ -2137,6 +2197,119 @@ el('restartBtn').addEventListener('click', () => { el('pauseScreen').hidden = tr
 el('menuBtn').addEventListener('click', goMenu);
 el('againBtn').addEventListener('click', () => startGame(mode));
 el('endMenuBtn').addEventListener('click', goMenu);
+
+/* ============================================================
+   14b. the global leaderboard
+   ------------------------------------------------------------
+   Additive, on purpose. The local BEST in the header works exactly as it did,
+   and every path through here that can fail ends as a line of text under the
+   score rather than a broken screen. leaderboard.js holds the fetching; this
+   holds the painting. With no Supabase project configured, none of it appears.
+   ============================================================ */
+const BOARD = window.Board && window.Board.configured ? window.Board : null;
+let boardMode = 'challenge';   // which board the standalone screen is showing
+let boardOpen = false;
+if (BOARD) el('boardBtn').hidden = false;
+
+/** rows in, list items out. Names come from strangers, so they are set as text
+    and never as markup. */
+function paintBoard(listEl, msgEl, rows, mine) {
+  listEl.innerHTML = '';
+  if (!rows || !rows.length) { msgEl.textContent = 'NOBODY HERE YET. BE THE FIRST.'; return; }
+  msgEl.textContent = '';
+  let marked = false;
+  for (const r of rows) {
+    const li = document.createElement('li');
+    // the run just posted, highlighted once - a tie shouldn't light up twice
+    if (mine && !marked && r.name === mine.name && r.score === mine.score) {
+      li.className = 'you';
+      marked = true;
+    }
+    const pos = document.createElement('span'); pos.className = 'pos'; pos.textContent = r.pos + '.';
+    const who = document.createElement('span'); who.className = 'who'; who.textContent = r.name;
+    const pts = document.createElement('span'); pts.className = 'pts'; pts.textContent = r.score;
+    li.append(pos, who, pts);
+    listEl.appendChild(li);
+  }
+}
+
+async function loadBoard(m, listEl, msgEl, mine) {
+  listEl.innerHTML = '';
+  msgEl.className = 'boardmsg';
+  msgEl.textContent = 'LOADING...';
+  try {
+    paintBoard(listEl, msgEl, await BOARD.top(m), mine);
+  } catch (err) {
+    msgEl.className = 'boardmsg bad';
+    msgEl.textContent = err.message;
+  }
+}
+
+/** the board under the score, with the name box when there is a score to post */
+function showEndBoard() {
+  if (!BOARD) return;
+  el('endSubmit').hidden = score < 1;
+  el('endName').value = BOARD.name();
+  el('endSubmitBtn').disabled = false;
+  el('endSubmitBtn').textContent = 'SUBMIT';
+  el('endBoard').hidden = false;
+  loadBoard(mode, el('endBoardList'), el('endBoardMsg'), null);
+}
+
+async function postScore() {
+  const btn = el('endSubmitBtn'), msg = el('endBoardMsg');
+  const name = el('endName').value.trim().slice(0, BOARD.MAX_NAME);
+  if (!name) {
+    msg.className = 'boardmsg bad';
+    msg.textContent = 'TYPE A NAME FIRST';
+    el('endName').focus();
+    return;
+  }
+  // the panel could in principle be restarted underneath this, so post the
+  // number the player is actually looking at
+  const posted = score, posMode = mode;
+  btn.disabled = true;
+  btn.textContent = 'SENDING';
+  msg.className = 'boardmsg';
+  msg.textContent = '';
+  try {
+    await BOARD.submit(posMode, posted, name);
+    BOARD.remember(name);
+    el('endSubmit').hidden = true;
+    await loadBoard(posMode, el('endBoardList'), el('endBoardMsg'), { name, score: posted });
+  } catch (err) {
+    btn.disabled = false;
+    btn.textContent = 'SUBMIT';
+    msg.className = 'boardmsg bad';
+    msg.textContent = err.message;
+  }
+}
+
+function openBoard(m) {
+  boardMode = m || boardMode;
+  el('boardTabChallenge').classList.toggle('ghost', boardMode !== 'challenge');
+  el('boardTabRoam').classList.toggle('ghost', boardMode !== 'roam');
+  el('startScreen').hidden = true;
+  el('boardScreen').hidden = false;
+  boardOpen = true;
+  loadBoard(boardMode, el('boardList'), el('boardMsg'), null);
+}
+
+function closeBoard() {
+  el('boardScreen').hidden = true;
+  el('startScreen').hidden = false;
+  boardOpen = false;
+  stateSince = performance.now();   // don't let the closing ENTER start a round
+}
+
+el('endSubmitBtn').addEventListener('click', postScore);
+el('endName').addEventListener('keydown', e => {
+  if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); postScore(); }
+});
+el('boardBtn').addEventListener('click', () => { audio(); openBoard(boardMode); });
+el('boardBackBtn').addEventListener('click', closeBoard);
+el('boardTabChallenge').addEventListener('click', () => openBoard('challenge'));
+el('boardTabRoam').addEventListener('click', () => openBoard('roam'));
 
 /* ============================================================
    15b. touch controls
@@ -2930,9 +3103,11 @@ requestAnimationFrame(frame);
 
 /* keyboard shortcut to start / restart */
 window.addEventListener('keydown', e => {
+  if (typing(e)) return;
   if (e.code === 'Escape') {
     e.preventDefault();
-    if (state === 'play') pauseGame();
+    if (boardOpen) closeBoard();
+    else if (state === 'play') pauseGame();
     else if (state === 'paused') resumeGame();
     else if (state === 'over') goMenu();
     return;
@@ -2942,6 +3117,7 @@ window.addEventListener('keydown', e => {
     return;
   }
   if (state === 'play') return;
+  if (boardOpen) return;            // reading the board, not waiting to start
   if (state === 'menu' && performance.now() - stateSince > 300) {
     if (e.code === 'Digit1') { e.preventDefault(); startGame('challenge'); return; }
     if (e.code === 'Digit2') { e.preventDefault(); startGame('roam'); return; }
